@@ -85,10 +85,13 @@ class TuSimple(Dataset):
         self.image_set = image_set
         self.random_transforms = random_transforms
         # normalization transform for input images
+        # common sense, they are calculated based on millions of images.
         self.mean = [0.485, 0.456, 0.406] #[103.939, 116.779, 123.68]
         self.std = [0.229, 0.224, 0.225] #[1, 1, 1]
         self.ignore_label = 255
         if self.random_transforms:
+            # transformation of pictures for augmentation
+            # transforms.Compose is used to combine all steps
             self.transforms = transforms.Compose([
                 tf.GroupRandomScale(size=(0.5, 0.6), interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST)),
                 tf.GroupRandomCropRatio(size=(self.input_size[1], self.input_size[0])),
@@ -114,6 +117,7 @@ class TuSimple(Dataset):
 
         with open(listfile) as f:
             for line in f:
+                # removes any leading (spaces at the beginning) and trailing (spaces at the end) characters
                 line = line.strip()
                 l = line.split(" ")
                 self.img_list.append(os.path.join(self.data_dir_path, l[0][1:]))  # l[0][1:]  get rid of the first '/' so as for os.path.join

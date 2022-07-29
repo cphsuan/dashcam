@@ -227,7 +227,10 @@ class DLA(nn.Module):
         super(DLA, self).__init__()
         self.channels = channels
         self.num_classes = num_classes
+        # nn.Sequential代表是建立簡單的前饋網路，即上一層的輸出直接作為下一層的輸入，不考慮中間過程
         self.base_layer = nn.Sequential(
+            # in_channels=3(RGB圖像)
+            # out_channels = [16, 32, 64, 128, 256, 512]
             nn.Conv2d(3, channels[0], kernel_size=7, stride=1,
                       padding=3, bias=False),
             nn.BatchNorm2d(channels[0], momentum=BN_MOMENTUM),
@@ -307,6 +310,8 @@ class DLA(nn.Module):
 
 
 def dla34(pretrained=True, **kwargs):  # DLA-34
+    # levels = [1, 1, 1, 2, 2, 1]
+    # out_channels = [16, 32, 64, 128, 256, 512]
     model = DLA([1, 1, 1, 2, 2, 1],
                 [16, 32, 64, 128, 256, 512],
                 block=BasicBlock, **kwargs)
@@ -427,9 +432,12 @@ class DLASeg(nn.Module):
     def __init__(self, base_name, heads, pretrained, down_ratio, final_kernel,
                  last_level, head_conv, out_channel=0):
         super(DLASeg, self).__init__()
+        # assert 確認條件是否為真，如果失敗會產生AssertionError
         assert down_ratio in [2, 4, 8, 16]
         self.first_level = int(np.log2(down_ratio))
         self.last_level = last_level
+        # globals 會以字典類型返回當前位置的全部全局變量
+        # base_name = DLA34
         self.base = globals()[base_name](pretrained=pretrained)
         channels = self.base.channels
         scales = [2 ** i for i in range(len(channels[self.first_level:]))]
