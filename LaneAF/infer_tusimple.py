@@ -22,12 +22,12 @@ from utils.visualize import tensor2image, create_viz
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
 parser.add_argument('--dataset-dir', type=str, default='/media/hsuan/data/TuSimple', help='path to dataset')
-parser.add_argument('--output-dir', type=str, default='/home/hsuan/LaneAF/infer_output', help='output directory for model and logs')
+parser.add_argument('--output-dir', type=str, default='/home/hsuan/Thesis/LaneAF/infer_output', help='output directory for model and logs')
 parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/laneaf-weights/tusimple-weights/dla34/net_0025.pth', help='path to pre-trained model snapshot')
 parser.add_argument('--split', type=str, default='test', help='dataset split to evaluate on (train/val/test)')
 parser.add_argument('--seed', type=int, default=1, help='set seed to some constant value to reproduce experiments')
 parser.add_argument('--no-cuda', action='store_true', default=False, help='do not use cuda for training')
-parser.add_argument('--save-viz', action='store_true', default=False, help='save visualization depicting intermediate and final results')
+parser.add_argument('--save-viz', action='store_true', default=True, help='save visualization depicting intermediate and final results')
 
 args = parser.parse_args()
 # check args
@@ -128,6 +128,9 @@ def test(net):
         if args.save_viz:
             img_out = create_viz(img, seg_out.astype(np.uint8), mask_out, vaf_out, haf_out)
 
+            cv2.imshow("img_out",img_out)
+            cv2.waitKey(0)
+            
             if out_vid is None:
                 out_vid = cv2.VideoWriter(os.path.join(args.output_dir, 'out.mkv'), 
                     cv2.VideoWriter_fourcc(*'H264'), 5, (img_out.shape[1], img_out.shape[0]))
