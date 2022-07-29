@@ -1,0 +1,1 @@
+{"dataset_dir": "/home/cvrr/data/Llamas/", "output_dir": "./experiments/llamas/2021-06-10-18:36", "backbone": "enet", "snapshot": null, "batch_size": 4, "epochs": 40, "learning_rate": 0.0001, "weight_decay": 0.001, "loss_type": "wbce", "log_schedule": 10, "seed": 1, "no_cuda": false, "random_transforms": true, "cuda": true}
