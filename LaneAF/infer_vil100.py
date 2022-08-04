@@ -1,7 +1,9 @@
+from copy import deepcopy
+import sys
 import os
 import json
 from datetime import datetime
-from pickle import FALSE, TRUE
+from pickle import FALSE, OBJ, TRUE
 from statistics import mean
 import argparse
 import numpy as np
@@ -73,6 +75,7 @@ class Parm:
             self.__IMG_H = quotient*32
         else:
             self.__IMG_H = (quotient-1)*32
+
     @property
     def IMG_W(self):
         return self.__IMG_W
@@ -83,6 +86,7 @@ class Parm:
             self.__IMG_W = quotient*32
         else:
             self.__IMG_W = (quotient-1)*32
+
     @property
     def IMG_org_crop_w(self):
         return self.__IMG_org_crop_w
@@ -93,6 +97,20 @@ class Parm:
             self.__IMG_org_crop_w = 0
         else:
             self.__IMG_org_crop_w = value - (quotient-1)*32
+
+class LaneFrame:
+    def __init__(self, frameid):
+        self.name = "Lane_Frame"+frameid
+        self.laneIDs = list()
+    
+    def add_lane(self, laneID):
+        self.laneIDs.append(laneID)
+
+    def __str__(self):
+        return f"LaneFrame_Name is {self.name}, laneIDs is {self.laneIDs}"
+
+    def __len__(self):
+        return len(self.laneIDs)
 
 
 def LaneAF(image, net):
@@ -147,24 +165,6 @@ def LaneAF(image, net):
     return seg_out, img_out
 
 
-def preprocessing(seg_out_LaneAF, img_out_LaneAF):
-    """ preprocessing image : create centerlane → """
-    #####test 建立lane class
-    global LaneID
-    LaneID = centerline(seg_out_LaneAF)    
-    ####斜率判斷
-    lane_loc = lane_loc_f(LaneID)
-    ## 消失點
-    Vpoint = vanishing_point(lane_loc)
-    ### 透視變換 ###
-    img_out, warped, pm= perspective_transform(parm, LaneID, Vpoint, lane_loc, img_out_LaneAF)
-
-    crop_loc(pm[0],pm[1],LaneID,parm)
-    cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
-
-    img = cv2.hconcat([img_out, cropimage])  # 水平拼接
-    return img
-
 if __name__ == "__main__":
 
     heads = {'hm': 1, 'vaf': 2, 'haf': 1}
@@ -186,60 +186,70 @@ if __name__ == "__main__":
     # 寫入檔案
     fourcc = cv2.VideoWriter_fourcc(*"XVID")
 
-    i = 1
+    frame_index = 0
+    lane_allframe = [] #儲存每一幀的lanes，(包含修改過的)
+    tem = [(-1,-1)] #儲存有問題的frameID and 每一幀的lanes(原始)
+    slope_diff = 0.1 #線段的斜率相減小於的值，視為同一條線
     while (cap.isOpened()):
         success, frame = cap.read()
+        laneframe = LaneFrame(str(frame_index))
 
         if not success:
-            print("Can't receive frame (stream end?). Exiting ...")
+            print("Can't receive frame ",frame_index+1)
             break
-        if i == 1:
+        if frame_index == 0:
             parm = Parm(np.shape(frame)[1],np.shape(frame)[0])
             parm.frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
             parm.fps = cap.get(cv2.CAP_PROP_FPS)
 
+            ### 抓出車道線 ###
             seg_out_LaneAF, img_out_LaneAF = LaneAF(frame, model)
-            img_out = preprocessing(seg_out_LaneAF, img_out_LaneAF)
-
             ### 建立lane class ###
-            global LaneID
-            LaneID = centerline(seg_out_LaneAF)    
-            ### 斜率判斷 ###
-            lane_loc = lane_loc_f(LaneID)
+            laneframe = centerline(seg_out_LaneAF,laneframe)
+            lane_allframe.append(laneframe)   
+            ### re-Lane ###
+            #第一幀pass
+            ### 道路線位置判斷 ###
+            lane_loc = lane_loc_f(laneframe)
             ### 消失點 ###
             Vpoint = vanishing_point(lane_loc)
             ### 透視變換 ###
-            img_out, warped, pm= perspective_transform(parm, LaneID, Vpoint, lane_loc, img_out_LaneAF)
+            img_out, warped, pm= perspective_transform(parm, Vpoint, lane_loc, img_out_LaneAF)
             ### 建立剪裁參數 ###
-            crop_loc(pm[0],pm[1],LaneID,parm)
+            crop_loc(pm[0],pm[1],laneframe,parm)
             ### 剪裁圖片 ###
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接
             
             videoWrite = cv2.VideoWriter('/home/hsuan/result.avi', fourcc, parm.fps, (int(parm.IMG_H+parm.crop[1]-parm.crop[0]), int(parm.IMG_W)))
             videoWrite.write(img)
+        elif (frame_index+1) == (parm.frame_count):
+            print("Stream end. Exiting ...")
+            break
+        else:
+            ### 抓出車道線 ###
+            seg_out_LaneAF, img_out_LaneAF = LaneAF(frame, model)
+            ### 建立lane class ###
+            laneframe = centerline(seg_out_LaneAF,laneframe)
+            ### re-Lane ###
+            lane_allframe.append(laneframe)
+            lane_allframe, tem = re_lane(lane_allframe,frame_index,tem, slope_diff)
+            ### 道路線位置判斷 ###
+            lane_loc = lane_loc_f(lane_allframe[frame_index])
+            ### 消失點 ###
+            Vpoint = vanishing_point(lane_loc)
+            ### 透視變換 ###
+            img_out, warped, pm= perspective_transform(parm, Vpoint, lane_loc, img_out_LaneAF)
+            ### 剪裁圖片 ###
+            cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
+            img = cv2.hconcat([img_out, cropimage])  # 水平拼接
+            
+            # cv2.imshow("img_out", img)
+            # cv2.waitKey(0)
+            videoWrite.write(img)
 
-
-        seg_out_LaneAF, img_out_LaneAF = LaneAF(frame, model)
-        
-        ### 建立lane class ###
-        LaneID = centerline(seg_out_LaneAF)    
-        ### 斜率判斷 ###
-        lane_loc = lane_loc_f(LaneID)
-        ### 消失點 ###
-        Vpoint = vanishing_point(lane_loc)
-        ### 透視變換 ###
-        img_out, warped, pm= perspective_transform(parm, LaneID, Vpoint, lane_loc, img_out_LaneAF)
-        ### 剪裁圖片 ###
-        cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
-        img = cv2.hconcat([img_out, cropimage])  # 水平拼接
-        
-        # cv2.imshow("img_out", img)
-        # cv2.waitKey(0)
-        videoWrite.write(img)
-
-        print('Done with image {} out of {}...'.format(i, int(parm.frame_count)))
-        i+=1
+        print('Done with image {} out of {}...'.format(frame_index+1, int(parm.frame_count)))
+        frame_index+=1
 
     videoWrite.release()
 
