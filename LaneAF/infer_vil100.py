@@ -26,8 +26,8 @@ from tools.perspective_correction import *
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
 parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/0_Road014_Trim004_frames.avi', help='path to input video')
-parser.add_argument('--dataset-dir', type=str , default='/media/hsuan/data/TuSimple', help='path to dataset')
-parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/laneaf-weights/tusimple-weights/dla34/net_0025.pth', help='path to pre-trained model snapshot')
+parser.add_argument('--dataset-dir', type=str , default='/media/hsuan/data/CULane', help='path to dataset')
+parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/laneaf-weights/culane-weights/dla34/net_0033.pth', help='path to pre-trained model snapshot')
 parser.add_argument('--seed', type=int, default=1 , help='set seed to some constant value to reproduce experiments')
 parser.add_argument('--no-cuda', action='store_true', default=False, help='do not use cuda for training')
 
@@ -179,17 +179,17 @@ if __name__ == "__main__":
         model.cuda()
     print(model)
     
-
     """ preprocessing video  """
     cap = cv2.VideoCapture(args.input_video)
     
     # 寫入檔案
     fourcc = cv2.VideoWriter_fourcc(*"XVID")
 
+    # 設定參數
     frame_index = 0
     lane_allframe = [] #儲存每一幀的lanes，(包含修改過的)
     tem = [(-1,-1)] #儲存有問題的frameID and 每一幀的lanes(原始)
-    slope_diff = 0.1 #線段的斜率相減小於的值，視為同一條線
+    slope_diff = 0.11 #線段的斜率相減小於的值，視為同一條線
     while (cap.isOpened()):
         success, frame = cap.read()
         laneframe = LaneFrame(str(frame_index))
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         if not success:
             print("Can't receive frame ",frame_index+1)
             break
-        if frame_index == 0:
+        if frame_index == 0: #第一幀為標準幀
             parm = Parm(np.shape(frame)[1],np.shape(frame)[0])
             parm.frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
             parm.fps = cap.get(cv2.CAP_PROP_FPS)
@@ -223,18 +223,25 @@ if __name__ == "__main__":
             
             videoWrite = cv2.VideoWriter('/home/hsuan/result.avi', fourcc, parm.fps, (int(parm.IMG_H+parm.crop[1]-parm.crop[0]), int(parm.IMG_W)))
             videoWrite.write(img)
-        elif (frame_index+1) == (parm.frame_count):
+        elif (frame_index+1) == (parm.frame_count): #最後一幀結束
             print("Stream end. Exiting ...")
             break
         else:
             ### 抓出車道線 ###
             seg_out_LaneAF, img_out_LaneAF = LaneAF(frame, model)
+            # cv2.imshow("img_out", img_out_LaneAF)
+            # cv2.waitKey(0)
             ### 建立lane class ###
             laneframe = centerline(seg_out_LaneAF,laneframe)
             ### re-Lane ###
             lane_allframe.append(laneframe)
+            for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
+                print("org_laneid",laneid.name,laneid.equa[0])
             lane_allframe, tem = re_lane(lane_allframe,frame_index,tem, slope_diff)
+            for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
+                print("laneid",laneid.name,laneid.equa[0])
             ### 道路線位置判斷 ###
+            # print(lane_allframe[frame_index])
             lane_loc = lane_loc_f(lane_allframe[frame_index])
             ### 消失點 ###
             Vpoint = vanishing_point(lane_loc)
