@@ -6,7 +6,8 @@ class Lane:
     def __init__(self,lane_name,equa,allpoints):
         self.name = lane_name
         self.equa = equa #中心線
-        self.allpoints = allpoints #所有點(已經放大) 
+        self.allpoints = allpoints #所有點(已經放大)
+        self.lanetype = "undefined"
     
     def __str__(self):
         return f"Name is {self.name}, Equa is {self.equa}"
@@ -95,19 +96,14 @@ def perspective_transform(parm, Vpoint, lane_loc, img_out):
     lane2x_d = int((parm.IMG_W - lane_loc["right_near_center"][1][1]) / lane_loc["right_near_center"][1][0])
     # 原點
     srcPts = np.float32([(lane1x_u, int(ProjY)),(lane2x_u, int(ProjY)),(lane1x_d, parm.IMG_W), (lane2x_d, parm.IMG_W)]) #(左上 右上 右下 左下)
-    # src points
+    
     img_out2 = img_out.copy()
-    # cv2.circle(img_out2, (lane1x_u, int(ProjY)),10, (255, 255, 0), 4)
-    # cv2.circle(img_out2, (lane2x_u, int(ProjY)),10, (255, 255, 0), 4)
-    # cv2.circle(img_out2, (lane1x_d, IMG_W),10, (255, 255, 0), 4)
-    # cv2.circle(img_out2, (lane2x_d, IMG_W),10, (255, 255, 0), 4)
     # 投影點
     dstPts = np.float32([(lane1x_d, 0), (lane2x_d, 0),(lane1x_d, parm.IMG_W), (lane2x_d, parm.IMG_W)])
     # 透視變換矩陣
     M = cv2.getPerspectiveTransform(srcPts, dstPts+100)
     warped = cv2.warpPerspective(img_out2, M, (5000, 5000), flags=cv2.INTER_LINEAR)
     
-    img_out2 = img_out.copy()
     # horizontal line
     cv2.line(img_out2, (0, int(Vpoint[1])), (int(parm.IMG_H), int(Vpoint[1])),color=(0, 0, 255), thickness=3)
     # Vertical line
@@ -133,29 +129,34 @@ def crop_loc(ProjY,M,laneframe,parm):
 def re_lane(lane_allframe,frame_index,tem, slope_diff):
     prob_laneID = []
     nowframe = deepcopy(lane_allframe[frame_index])
-
-    """ 如果現在這一幀跟前一幀抓到的道路線數一樣，用前一幀比對這一幀"""
+    print("這一幀測試")
+    for i, laneid in enumerate(nowframe.laneIDs):
+        print("laneid",laneid.name,laneid.equa[0])
+        """ 如果現在這一幀跟前一幀抓到的道路線數一樣，用前一幀比對這一幀"""
     if len(lane_allframe[frame_index]) == len(lane_allframe[frame_index-1]):
         # print('第{}幀有{}條道路線，前一幀有{}條道路線'.format(frame_index,len(lane_allframe[frame_index]),len(lane_allframe[frame_index-1])))
         #判斷
         for i, laneid_prev in enumerate(lane_allframe[frame_index-1].laneIDs):
             # print("Prev_TastName",laneid_prev.name,laneid_prev.equa[0])
             # print(nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
-            if (laneid_prev.name == nowframe.laneIDs[i].name) & (abs(laneid_prev.equa[0] -nowframe.laneIDs[i].equa[0]) <= slope_diff):
-                # print("success_New",lane_allframe[frame_index].laneIDs[i].name,lane_allframe[frame_index].laneIDs[i].equa[0])
+            if (abs(laneid_prev.equa[0] - nowframe.laneIDs[i].equa[0]) <= slope_diff):
+                nowframe.laneIDs[i].name = laneid_prev.name
+                # print("success_New(1)",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
                 continue
             elif (i+1) < len(nowframe): #再判斷是不是最後一條道路線  
                 #+1(跳過自己) 檢查後面的線
                 for j in range(i+1 ,len(nowframe)):
-                    # print("j=",j,"range(i+1 ,len(nowframe)",i+1,len(nowframe))
                     # print("j=",nowframe.laneIDs[j].equa[0])
 
                     if(abs(laneid_prev.equa[0] - nowframe.laneIDs[j].equa[0]) <= slope_diff):
+                        # print("nowframe.laneIDs[j].name",nowframe.laneIDs[j].name)
+                        # print("laneid_prev.name",laneid_prev.name)
+                        tem_lane = nowframe.laneIDs[i] #暫時儲存要交換的道路線
                         nowframe.laneIDs[j].name = laneid_prev.name
                         nowframe.laneIDs[i] = nowframe.laneIDs[j]
-                        nowframe.laneIDs[j] = lane_allframe[frame_index].laneIDs[i]
-                        nowframe.laneIDs[j].name = lane_allframe[frame_index].laneIDs[j].name
-                        print("success","laneid_new：",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
+                        nowframe.laneIDs[j] = tem_lane
+
+                        # print("success_New(2)","laneid_new：",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
                         break
 
                     elif (j == (len((nowframe))-1)): #判斷是不是最後一條線
@@ -169,13 +170,14 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
                                     prob.name = laneid_prev.name
                                     nowframe.laneIDs[i] = prob
                                     del prob_laneID[prob_index]
-                                    print("success","laneid_new：",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
+                                    # print("success_New(3)","laneid_new：",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
                                     break
                                 else:
                                     # 如果都沒找到
                                     nowframe.laneIDs[i].name = "prob_"+ nowframe.laneIDs[i].name
                                     prob_laneID.append(nowframe.laneIDs[i])
-                                    break
+                                    # print("error(3)")
+
                             else:
                                 continue
                             break
@@ -183,21 +185,23 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
                             # 如果都沒找到
                             nowframe.laneIDs[i].name = "prob_"+ nowframe.laneIDs[i].name
                             prob_laneID.append(nowframe.laneIDs[i])
-                            break
+                            # print("error(4)")
+
                     else:
                         pass #往下跑下一個迴圈
 
                 else:
                     continue
-                break   
+
             else:#最後一條直接檢查問題線
+
                 if len(prob_laneID) != 0:
                     for prob_index, prob in enumerate(prob_laneID):
                         if(abs(laneid_prev.equa[0] - prob.equa[0]) <= slope_diff):
 
                             nowframe.laneIDs[i].name = "prob_"+ nowframe.laneIDs[i].name
                             prob_laneID.append(nowframe.laneIDs[i])
-                            
+                            # print("success_New(4)","laneid_new：",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
                             prob.name = laneid_prev.name
                             nowframe.laneIDs[i] = prob
                             del prob_laneID[prob_index]
@@ -209,13 +213,14 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
                     # 如果都沒找到
                     nowframe.laneIDs[i].name = "prob_"+ nowframe.laneIDs[i].name
                     prob_laneID.append(nowframe.laneIDs[i])
+                    # print("error(5)")
 
         """ 如果現在這一幀比前一幀抓到的道路線數多，則用前一幀比對這一幀 """
     elif len(lane_allframe[frame_index]) > len(lane_allframe[frame_index-1]):
         # print('第{}幀有{}條道路線，前一幀有{}條道路線'.format(frame_index,len(lane_allframe[frame_index]),len(lane_allframe[frame_index-1])))
         prob_frameids, b = zip(*tem) #檢驗前一幀是不是也有相同問題
-        if frame_index-1 in prob_frameids:
-            assert False, 'error! 遇到了再處理'
+        # if frame_index-1 in prob_frameids:
+        #     assert False, 'error! 遇到了再處理'
         
         tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #紀錄問題幀
         a, b = zip(*tem)
@@ -230,24 +235,25 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
         for i, laneid_prev in enumerate(lane_allframe[frame_index-1].laneIDs):
             # print("Prev_TastName",laneid_prev.name,laneid_prev.equa[0])
 
-            if (laneid_prev.name == nowframe.laneIDs[i].name) & (abs(laneid_prev.equa[0] -nowframe.laneIDs[i].equa[0]) <= slope_diff):
+            if (abs(laneid_prev.equa[0] -nowframe.laneIDs[i].equa[0]) <= slope_diff):
                 # print('第{}幀的道路線{}，前一幀的道路線{}'.format(frame_index,laneid.name,lane_allframe[frame_index-1].laneIDs[i].name))
-                # print("success_New",lane_allframe[frame_index].laneIDs[i].name,lane_allframe[frame_index].laneIDs[i].equa[0])
+                nowframe.laneIDs[i].name = laneid_prev.name
+                # print("success_New(1)",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
                 continue
             
             elif (i+1) < len(nowframe): #判斷是不是最後一條道路線
                 #+1(跳過自己) 檢查後面的線
                 for j in range(i+1 ,len(nowframe)):
                     if(abs(laneid_prev.equa[0] - nowframe.laneIDs[j].equa[0]) <= slope_diff):
-                        
+                        tem_lane = nowframe.laneIDs[i] #暫時儲存要交換的道路線
                         nowframe.laneIDs[j].name = laneid_prev.name
                         nowframe.laneIDs[i] = nowframe.laneIDs[j]
-                        nowframe.laneIDs[j] = lane_allframe[frame_index].laneIDs[i]
-                        nowframe.laneIDs[j].name = lane_allframe[frame_index].laneIDs[j].name
+                        nowframe.laneIDs[j] = tem_lane
+
                         print("success","laneid_new：",nowframe.laneIDs[i].name,nowframe.laneIDs[i].equa[0])
                         break
                     
-                    elif j == (len(nowframe)-1):
+                    elif (j == (len(nowframe)-1)):
                         #後面的線沒找到再檢查問題線
                         if len(prob_laneID) != 0:
                             for prob_index, prob in enumerate(prob_laneID):
@@ -265,14 +271,12 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
                                     break
                                 else:
                                     # 如果都沒找到
-                                    print("q")
                                     nowframe.laneIDs[i].name = "prob_"+ nowframe.laneIDs[i].name
                                     prob_laneID.append(nowframe.laneIDs[i])
                             else:
                                 continue
                             break   
                         else:
-                            print("w")
                             # 如果都沒找到
                             nowframe.laneIDs[i].name = "prob_"+ nowframe.laneIDs[i].name
                             prob_laneID.append(nowframe.laneIDs[i])
@@ -281,7 +285,7 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
 
                 else:
                     continue
-                break  
+
             else:
                 #檢查問題線
                 if len(prob_laneID) != 0:

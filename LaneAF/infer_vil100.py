@@ -9,7 +9,6 @@ import argparse
 import numpy as np
 import cv2
 from pandas import array
-import math
 from sklearn.metrics import accuracy_score, f1_score
 import torch
 from torch.utils.data import DataLoader
@@ -23,6 +22,7 @@ from utils.affinity_fields import decodeAFs
 from utils.metrics import match_multi_class, LaneEval
 from utils.visualize import tensor2image, create_viz
 from tools.perspective_correction import *
+from tools.CustomerClass import *
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
 parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/0_Road014_Trim004_frames.avi', help='path to input video')
@@ -56,61 +56,6 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 kwargs = {'batch_size': args.batch_size, 'shuffle': False, 'num_workers': 1}
-
-
-class Parm:
-    def __init__(self,IMG_H, IMG_W):
-        self.IMG_H = IMG_H
-        self.IMG_org_crop_H = IMG_H
-        self.IMG_W = IMG_W
-        self.IMG_org_crop_w = IMG_W
-
-    @property
-    def IMG_H(self):
-        return self.__IMG_H
-    @IMG_H.setter
-    def IMG_H(self, value):
-        quotient = value / 32
-        if quotient %2 == 0:
-            self.__IMG_H = quotient*32
-        else:
-            self.__IMG_H = (quotient-1)*32
-
-    @property
-    def IMG_W(self):
-        return self.__IMG_W
-    @IMG_W.setter
-    def IMG_W(self, value):
-        quotient = math.floor(value / 32)
-        if quotient %2 == 0:
-            self.__IMG_W = quotient*32
-        else:
-            self.__IMG_W = (quotient-1)*32
-
-    @property
-    def IMG_org_crop_w(self):
-        return self.__IMG_org_crop_w
-    @IMG_org_crop_w.setter
-    def IMG_org_crop_w(self,value):
-        quotient = math.floor(value / 32)
-        if quotient %2 == 0:
-            self.__IMG_org_crop_w = 0
-        else:
-            self.__IMG_org_crop_w = value - (quotient-1)*32
-
-class LaneFrame:
-    def __init__(self, frameid):
-        self.name = "Lane_Frame"+frameid
-        self.laneIDs = list()
-    
-    def add_lane(self, laneID):
-        self.laneIDs.append(laneID)
-
-    def __str__(self):
-        return f"LaneFrame_Name is {self.name}, laneIDs is {self.laneIDs}"
-
-    def __len__(self):
-        return len(self.laneIDs)
 
 
 def LaneAF(image, net):
@@ -192,7 +137,7 @@ if __name__ == "__main__":
     slope_diff = 0.11 #線段的斜率相減小於的值，視為同一條線
     while (cap.isOpened()):
         success, frame = cap.read()
-        laneframe = LaneFrame(str(frame_index))
+        laneframe = LanePerFrame(str(frame_index))
 
         if not success:
             print("Can't receive frame ",frame_index+1)
@@ -235,11 +180,9 @@ if __name__ == "__main__":
             laneframe = centerline(seg_out_LaneAF,laneframe)
             ### re-Lane ###
             lane_allframe.append(laneframe)
-            for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
-                print("org_laneid",laneid.name,laneid.equa[0])
             lane_allframe, tem = re_lane(lane_allframe,frame_index,tem, slope_diff)
-            for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
-                print("laneid",laneid.name,laneid.equa[0])
+            # for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
+            #     print("laneid",laneid.name,laneid.equa[0])
             ### 道路線位置判斷 ###
             # print(lane_allframe[frame_index])
             lane_loc = lane_loc_f(lane_allframe[frame_index])
