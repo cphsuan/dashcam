@@ -1,0 +1,5 @@
+faster_rcnn_r50_fpn_1x.py
+modelname, resnet50的backbone, FPN特徵層,12次epoch
+
+remark in /home/hsuan/Thesis/mmdetection/configs/_base_/models/faster_rcnn_r50_fpn.py
+

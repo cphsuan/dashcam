@@ -196,6 +196,7 @@ if __name__ == "__main__":
             
             # cv2.imshow("img_out", img)
             # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
             videoWrite.write(img)
 
         print('Done with image {} out of {}...'.format(frame_index+1, int(parm.frame_count)))

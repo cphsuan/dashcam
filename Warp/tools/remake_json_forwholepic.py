@@ -7,7 +7,6 @@ import argparse
 from copy import deepcopy
 
 from PIL import Image
-from labelme.logger import logger
 from labelme import PY2
 from labelme import QT4
 
