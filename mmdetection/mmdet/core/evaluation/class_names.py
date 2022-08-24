@@ -84,7 +84,7 @@ def imagenet_vid_classes():
 
 def coco_classes():
     return [
-        'single white solid', 'single white dotted'
+        "ego vehicle", "rider", "bicycle", "bus", "car","caravan", "motorcycle", "trailer", "train", "truck"
         ]
 
 

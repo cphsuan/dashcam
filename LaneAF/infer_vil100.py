@@ -1,4 +1,5 @@
 from copy import deepcopy
+from distutils.log import error
 import sys
 import os
 import json
@@ -23,6 +24,11 @@ from utils.metrics import match_multi_class, LaneEval
 from utils.visualize import tensor2image, create_viz
 from tools.perspective_correction import *
 from tools.CustomerClass import *
+from tools.detect_tool import *
+
+#for mmdetection
+sys.path.append(r'/home/hsuan/Thesis/mmdetection/')
+from mmdet.apis import (inference_detector, init_detector)
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
 parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/0_Road014_Trim004_frames.avi', help='path to input video')
@@ -30,7 +36,12 @@ parser.add_argument('--dataset-dir', type=str , default='/media/hsuan/data/CULan
 parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/laneaf-weights/culane-weights/dla34/net_0033.pth', help='path to pre-trained model snapshot')
 parser.add_argument('--seed', type=int, default=1 , help='set seed to some constant value to reproduce experiments')
 parser.add_argument('--no-cuda', action='store_true', default=False, help='do not use cuda for training')
-
+# for mmdetection
+parser.add_argument('--detconfig',default='mmdetection/configs/faster_rcnn/faster_rcnn_r50_fpn_1x_coco.py' ,help='Config file')
+parser.add_argument('--detcheckpoint',default='mmdetection/work_dirs/latest.pth' ,help='Checkpoint file')
+parser.add_argument('--detout-file', default=None, help='Path to output file')
+parser.add_argument('--detpalette', default='coco', choices=['coco', 'voc', 'citys', 'random'], help='Color palette used for visualization')
+parser.add_argument('--detscore-thr', type=float, default=0.3, help='bbox score threshold')
 args = parser.parse_args()
 # check args
 if args.input_video is None:
@@ -41,6 +52,7 @@ if args.snapshot is None:
 args.batch_size = 1
 # setup cuda
 args.cuda = not args.no_cuda and torch.cuda.is_available()
+
 # load args used from training snapshot (if available)
 if os.path.exists(os.path.join(os.path.dirname(args.snapshot), 'config.json')):
     with open(os.path.join(os.path.dirname(args.snapshot), 'config.json')) as f:
@@ -58,15 +70,10 @@ if args.cuda:
 kwargs = {'batch_size': args.batch_size, 'shuffle': False, 'num_workers': 1}
 
 
-def LaneAF(image, net):
+def LaneAF(img, net):
     """ LaneAF: Robust Multi-Lane Detection with Affinity Fields
     https://github.com/sel118/LaneAF """
     net.eval()
-    # img preprocessing
-    img = image.astype(np.float32)/255  # (H, W, 3)
-    #img = cv2.resize(img[16:, :, :], (1280, 704), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
-    img = cv2.resize(img[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_transforms = transforms.Compose([
         tf.GroupRandomScale(size=(0.5, 0.5), interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST)),
         tf.GroupNormalize(mean=([0.485, 0.456, 0.406], (0, )), std=([0.229, 0.224, 0.225], (1, ))),])
@@ -110,6 +117,24 @@ def LaneAF(image, net):
     return seg_out, img_out
 
 
+def Detection(args, img):
+    '''加入 mmdetection 訓練後的結果， 目前只取 ego vehicle'''
+    model = init_detector(args.detconfig, args.detcheckpoint, device='cuda:0')
+    # test a single image
+    result = inference_detector(model, img)
+    print(result[0])
+    egobboxs = []
+    if result[0]:
+        for rec in result[0]:
+            x1, y1, x2, y2, score = rec[0], rec[1], rec[2], rec[3], rec[4]
+            if score > args.detscore_thr:
+                print(x1, y1, x2, y2)
+                box = {'label': model.CLASSES[0], 'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2)}
+                egobboxs.append(box)
+                drawBoundingBox(img, egobboxs)
+                return img, y1
+    return img, None
+
 if __name__ == "__main__":
 
     heads = {'hm': 1, 'vaf': 2, 'haf': 1}
@@ -147,8 +172,21 @@ if __name__ == "__main__":
             parm.frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
             parm.fps = cap.get(cv2.CAP_PROP_FPS)
 
+            ### frame processing ###
+            img = cv2.resize(frame[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
+
+            ### 前車蓋 ###
+            global egoH
+            img, egoH = Detection(args, img)
+            # cv2.imshow("img_out", img)
+            # cv2.waitKey(0)
+
+            ### frame processing ###
+            img = img.astype(np.float32)/255  # (H, W, 3)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
             ### 抓出車道線 ###
-            seg_out_LaneAF, img_out_LaneAF = LaneAF(frame, model)
+            seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
             ### 建立lane class ###
             laneframe = centerline(seg_out_LaneAF,laneframe)
             lane_allframe.append(laneframe)   
@@ -159,21 +197,26 @@ if __name__ == "__main__":
             ### 消失點 ###
             Vpoint = vanishing_point(lane_loc)
             ### 透視變換 ###
-            img_out, warped, pm= perspective_transform(parm, Vpoint, lane_loc, img_out_LaneAF)
+            img_out, warped, pm= perspective_transform(parm, egoH, Vpoint, lane_loc, img_out_LaneAF)
             ### 建立剪裁參數 ###
             crop_loc(pm[0],pm[1],laneframe,parm)
             ### 剪裁圖片 ###
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接
-            
-            videoWrite = cv2.VideoWriter('/home/hsuan/result.avi', fourcc, parm.fps, (int(parm.IMG_H+parm.crop[1]-parm.crop[0]), int(parm.IMG_W)))
+
+            videoWrite = cv2.VideoWriter('/home/hsuan/results/result.avi', fourcc, parm.fps, (int(parm.IMG_H+parm.crop[1]-parm.crop[0]), int(parm.IMG_W)))
             videoWrite.write(img)
         elif (frame_index+1) == (parm.frame_count): #最後一幀結束
             print("Stream end. Exiting ...")
             break
         else:
+            ### frame processing ###
+            img = frame.astype(np.float32)/255  # (H, W, 3)
+            img = cv2.resize(img[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
             ### 抓出車道線 ###
-            seg_out_LaneAF, img_out_LaneAF = LaneAF(frame, model)
+            seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
             # cv2.imshow("img_out", img_out_LaneAF)
             # cv2.waitKey(0)
             ### 建立lane class ###
@@ -189,7 +232,7 @@ if __name__ == "__main__":
             ### 消失點 ###
             Vpoint = vanishing_point(lane_loc)
             ### 透視變換 ###
-            img_out, warped, pm= perspective_transform(parm, Vpoint, lane_loc, img_out_LaneAF)
+            img_out, warped, pm= perspective_transform(parm, egoH, Vpoint, lane_loc, img_out_LaneAF)
             ### 剪裁圖片 ###
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接

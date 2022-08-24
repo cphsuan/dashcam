@@ -85,17 +85,22 @@ def corresponding_coordinates(pos,M):
     y = (M[1][0]*u+M[1][1]*v+M[1][2])/(M[2][0]*u+M[2][1]*v+M[2][2])
     return (int(x), int(y))
 
-def perspective_transform(parm, Vpoint, lane_loc, img_out):
+def perspective_transform(parm, egoH, Vpoint, lane_loc, img_out):
     """ 透視變換 """
+    # 如果有車蓋
+    transH = parm.IMG_W
+    if egoH:
+        transH = egoH
+
     # 計算投影Y軸
-    ProjY = int((parm.IMG_W-Vpoint[1])*0.25+Vpoint[1])
+    ProjY = int((transH-Vpoint[1])*0.25+Vpoint[1])
     # 取 left_near_center right_near_center Vertical line
     lane1x_u = int((ProjY - lane_loc["left_near_center"][1][1]) / lane_loc["left_near_center"][1][0]) 
     lane2x_u = int((ProjY - lane_loc["right_near_center"][1][1]) / lane_loc["right_near_center"][1][0]) 
-    lane1x_d = int((parm.IMG_W - lane_loc["left_near_center"][1][1]) / lane_loc["left_near_center"][1][0]) 
-    lane2x_d = int((parm.IMG_W - lane_loc["right_near_center"][1][1]) / lane_loc["right_near_center"][1][0])
+    lane1x_d = int((transH - lane_loc["left_near_center"][1][1]) / lane_loc["left_near_center"][1][0]) 
+    lane2x_d = int((transH - lane_loc["right_near_center"][1][1]) / lane_loc["right_near_center"][1][0])
     # 原點
-    srcPts = np.float32([(lane1x_u, int(ProjY)),(lane2x_u, int(ProjY)),(lane1x_d, parm.IMG_W), (lane2x_d, parm.IMG_W)]) #(左上 右上 右下 左下)
+    srcPts = np.float32([(lane1x_u, int(ProjY)),(lane2x_u, int(ProjY)),(lane1x_d, int(transH)), (lane2x_d, int(transH))]) #(左上 右上 右下 左下)
     
     img_out2 = img_out.copy()
     # 投影點
@@ -110,15 +115,16 @@ def perspective_transform(parm, Vpoint, lane_loc, img_out):
     cv2.line(img_out2, (int(Vpoint[0]), int(Vpoint[1])), (int(Vpoint[0]), parm.IMG_W),color=(0, 0, 255), thickness=3)
     # ProjY horizontal line
     cv2.line(img_out2, (0, ProjY), (int(parm.IMG_H), ProjY),color=(0, 255, 0), thickness=3)
+    cv2.line(img_out2, (0, int(transH)), (int(parm.IMG_H), int(transH)),color=(255, 255, 0), thickness=3)
     # src points
     cv2.circle(img_out2, (lane1x_u, int(ProjY)),10, (255, 0, 0), 4)
     cv2.circle(img_out2, (lane2x_u, int(ProjY)),10, (255, 0, 0), 4)
-    cv2.circle(img_out2, (lane1x_d, int(parm.IMG_W)),10, (255, 0, 0), 4)
-    cv2.circle(img_out2, (lane2x_d, int(parm.IMG_W)),10, (255, 0, 0), 4)
+    cv2.circle(img_out2, (lane1x_d, int(transH)),10, (255, 0, 0), 4)
+    cv2.circle(img_out2, (lane2x_d, int(transH)),10, (255, 0, 0), 4)
     return img_out2, warped, (ProjY,M)
 
 def crop_loc(ProjY,M,laneframe,parm):
-    #計算擷取位置
+    '''計算擷取位置'''
     crop_x =[]
     for id in (laneframe.laneIDs):
         x = int((ProjY - id.equa[1]) / id.equa[0]) #計算lane 在投影Y軸上的X值
