@@ -1,4 +1,4 @@
-import os
+import os, time
 import json
 from datetime import datetime
 from statistics import mean
@@ -128,8 +128,8 @@ def test(net):
         if args.save_viz:
             img_out = create_viz(img, seg_out.astype(np.uint8), mask_out, vaf_out, haf_out)
 
-            cv2.imshow("img_out",img_out)
-            cv2.waitKey(0)
+            # cv2.imshow("img_out",img_out)
+            # cv2.waitKey(0)
             
             if out_vid is None:
                 out_vid = cv2.VideoWriter(os.path.join(args.output_dir, 'out.mkv'), 
@@ -149,6 +149,7 @@ def test(net):
     return
 
 if __name__ == "__main__":
+    t1 = time.time()
     heads = {'hm': 1, 'vaf': 2, 'haf': 1}
     if args.backbone == 'dla34':
         model = get_pose_net(num_layers=34, heads=heads, head_conv=256, down_ratio=4)
@@ -163,3 +164,5 @@ if __name__ == "__main__":
     print(model)
 
     test(model)
+    t2 = time.time()
+    print(str(t2 - t1) + "seconds")

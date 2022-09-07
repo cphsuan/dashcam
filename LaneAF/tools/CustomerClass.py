@@ -1,6 +1,11 @@
 import math
 
 class LanePerFrame:
+    """
+    All lanes Info in this frame.
+    name: Lane_Frame1, Lane_Frame2, Lane_Frame3...
+    laneIDs: store all lanes Info from Class Lane, its name: LaneID_1, LaneID_2, LaneID_3...
+    """
     def __init__(self, frameid):
         self.name = "Lane_Frame"+frameid
         self.laneIDs = list()

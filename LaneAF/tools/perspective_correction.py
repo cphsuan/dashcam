@@ -1,11 +1,21 @@
 import numpy as np
 import cv2
 from copy import deepcopy
+from typing import Dict, List
 
 class Lane:
-    def __init__(self,lane_name,equa,allpoints):
+    '''
+    It's used to build each lane of per frame.
+    name: LaneID_1, LaneID_2, LaneID_3...
+    equa: equa[0] = slope, equa[1] = intercept build the line
+    centerpoints: center point of each row of per frame.(no magnification)
+    allpoints: allpoints of per frame(magnification)
+    lanetype: #TODO
+    '''
+    def __init__(self,lane_name,equa,centerpoints, allpoints):
         self.name = lane_name
         self.equa = equa #中心線
+        self.centerpoints = centerpoints
         self.allpoints = allpoints #所有點(已經放大)
         self.lanetype = "undefined"
     
@@ -21,39 +31,92 @@ class Lane:
         return self.allpoints.max(axis=0)
 
 def centerline(seg_out,laneframe):
-    """建立中心線"""
-    ID = np.delete(np.unique(seg_out), [0]) #有幾條道路線
-
+    """
+    Use the polyfit function to build centerlines.
+    :return: laneframe: all lanes Info in this frame.
+    """
+    ID = np.delete(np.unique(seg_out), [0]) #number of lanes
+    checkslope = []
     for i in ID:
         cal_seg = seg_out.copy()
         cal_seg[cal_seg != i] = 0
         CenterPoints = []
         AllPoints = []
 
-        for row in range(np.shape(cal_seg)[0]): #每條row去找
+        for row in range(np.shape(cal_seg)[0]): # search each row
             col_loc = []
             for j, v in enumerate(cal_seg[row]):
                 if (v == i):
                     col_loc.append(j)
-                    AllPoints.append([j,row])
+                    AllPoints.append([row, j])
 
             if (np.isnan(np.median(col_loc)) == False):
-                CenterPoints.append([row, int(np.median(col_loc))]) #row的中心位置
+                CenterPoints.append([row, int(np.median(col_loc))]) #CenterPoints : get the median point for row
 
-        #建立中心線
+        if len(AllPoints) < 20: # the lane is too small
+            print("the lane is too small")
+            input()
+            continue
+
+        #build the centerlines
         y, x = zip(*CenterPoints)
 
-        x_scale = [i*8 for i in x] #放大成原尺寸
+        x_scale = [i*8 for i in x] #Enlarge to original size
         y_scale = [i*8 for i in y]
-        equa = np.polyfit(x_scale, y_scale, 1) #建立線
+        equa = np.polyfit(x_scale, y_scale, 1)
 
-        #建立lane class
-        laneframe.add_lane(Lane(("LaneID_"+str(i)),equa,np.array(AllPoints)*8))
+        #Check for similar lines(slope)
+        if len(checkslope) != 0 :
+
+            x = [x for x in checkslope if abs(x-equa[0]) < 0.1] #threshold: 0.1
+            if len(x) != 0:
+                # print("The lane's slope is Similar to ",checkslope.index(x))
+                testlane = laneframe.laneIDs[checkslope.index(x)]
+                comb_centerpoints = np.concatenate((testlane.centerpoints,CenterPoints))
+                comb_centerpoints = comb_centerpoints[comb_centerpoints[:,0].argsort()]
+
+                y, x = zip(*comb_centerpoints)
+                comb_x_scale = [i*8 for i in x] #放大成原尺寸
+                comb_y_scale = [i*8 for i in y]
+                comb_equa = np.polyfit(comb_x_scale, comb_y_scale, 1) #建立線
+
+                #Check if the new centerline's slope is between the two lines' slope. True means they are the same lane.
+                if abs(testlane.equa[0]) <= abs(equa[0]):
+                    if comb_equa[0] <= abs(equa[0]) and comb_equa[0] >= abs(testlane.equa[0]):
+                        testlane.equa = comb_equa
+                        testlane.centerpoints = comb_centerpoints
+                        
+                        comb_allpoints = np.concatenate((testlane.allpoints,np.array(AllPoints)*8))
+                        comb_allpoints = comb_allpoints[comb_allpoints[:,0].argsort()]
+                        laneframe.laneIDs[checkslope.index(x)].allpoints = comb_allpoints
+                        continue
+                else:
+                    if comb_equa[0] <= abs(testlane.equa[0]) and comb_equa[0] >= abs(equa[0]):
+
+                        testlane.equa = comb_equa
+                        testlane.centerpoints = comb_centerpoints
+                        
+                        comb_allpoints = np.concatenate((testlane.allpoints,np.array(AllPoints)*8))
+                        comb_allpoints = comb_allpoints[comb_allpoints[:,0].argsort()]
+                        testlane.allpoints = comb_allpoints
+                        continue
+
+                print("can't combine two lanes. Check it!")
+                input()
+            
+        checkslope.append(equa[0])
+
+        #add lane to laneframe 
+        laneframe.add_lane(Lane(("LaneID_"+str(i)),equa,np.array(CenterPoints), np.array(AllPoints)*8))
     
     return laneframe
 
-def lane_loc_f(laneframe):
-    """道路線相對位置"""
+def lane_loc_f(laneframe) -> Dict:
+    """
+    Determine the location of the lanes.
+    only judge by the slope.
+    #TODO judge in another way
+    """
     left_loc=[]
     right_loc=[]
 
@@ -62,18 +125,23 @@ def lane_loc_f(laneframe):
         slope = id.equa[0]
 
         if slope < 0: #因為opencv座標關係
-            left_loc.append([id.name,id.equa])
+            left_loc.append(id)#.name,id.equa])
         else :
-            right_loc.append([id.name,id.equa])
+            right_loc.append(id)#.name,id.equa])
 
-    lane_loc = {"leftmost":min(left_loc),"left_near_center":max(left_loc),"right_near_center":min(right_loc),"rightmost":max(right_loc)}
+    left_loc.sort(key=lambda x: x.equa[0])        
+    right_loc.sort(key=lambda x: x.equa[0])
+
+    lane_loc = {"leftmost":left_loc[-1],"left_near_center":left_loc[0],"right_near_center":right_loc[-1],"rightmost":right_loc[0]}
     return lane_loc
 
-def vanishing_point(lane_loc):
-    """ 找消失點(left_near_center,right_near_center) """
-    P_diff = np.polysub(lane_loc["left_near_center"][1], lane_loc["right_near_center"][1])
+def vanishing_point(lane_loc: Dict)-> List:
+    """
+    Calculate the vanishing point through the intersection of left_near_center and right_near_center
+    """
+    P_diff = np.polysub(lane_loc["left_near_center"].equa, lane_loc["right_near_center"].equa)
     Vx = np.roots(P_diff)
-    Vy = np.polyval(lane_loc["left_near_center"][1], Vx)
+    Vy = np.polyval(lane_loc["left_near_center"].equa, Vx)
     Vpoint = np.append(Vx, Vy)
     return Vpoint
 
@@ -85,20 +153,21 @@ def corresponding_coordinates(pos,M):
     y = (M[1][0]*u+M[1][1]*v+M[1][2])/(M[2][0]*u+M[2][1]*v+M[2][2])
     return (int(x), int(y))
 
-def perspective_transform(parm, egoH, Vpoint, lane_loc, img_out):
-    """ 透視變換 """
-    # 如果有車蓋
+def perspective_transform(parm, egoH, Vpoint: List, lane_loc: Dict, img_out):
+    """
+    Convert to a bird's-eye view with perspective transformation
+    """
     transH = parm.IMG_W
-    if egoH:
+    if egoH: # If there is a hood below the picture
         transH = egoH
 
     # 計算投影Y軸
     ProjY = int((transH-Vpoint[1])*0.25+Vpoint[1])
     # 取 left_near_center right_near_center Vertical line
-    lane1x_u = int((ProjY - lane_loc["left_near_center"][1][1]) / lane_loc["left_near_center"][1][0]) 
-    lane2x_u = int((ProjY - lane_loc["right_near_center"][1][1]) / lane_loc["right_near_center"][1][0]) 
-    lane1x_d = int((transH - lane_loc["left_near_center"][1][1]) / lane_loc["left_near_center"][1][0]) 
-    lane2x_d = int((transH - lane_loc["right_near_center"][1][1]) / lane_loc["right_near_center"][1][0])
+    lane1x_u = int((ProjY - lane_loc["left_near_center"].equa[1]) / lane_loc["left_near_center"].equa[0]) 
+    lane2x_u = int((ProjY - lane_loc["right_near_center"].equa[1]) / lane_loc["right_near_center"].equa[0]) 
+    lane1x_d = int((transH - lane_loc["left_near_center"].equa[1]) / lane_loc["left_near_center"].equa[0]) 
+    lane2x_d = int((transH - lane_loc["right_near_center"].equa[1]) / lane_loc["right_near_center"].equa[0])
     # 原點
     srcPts = np.float32([(lane1x_u, int(ProjY)),(lane2x_u, int(ProjY)),(lane1x_d, int(transH)), (lane2x_d, int(transH))]) #(左上 右上 右下 左下)
     
@@ -133,11 +202,14 @@ def crop_loc(ProjY,M,laneframe,parm):
     parm.crop = (round(min(crop_x)-200,-2), round(max(crop_x)+200,-2))
 
 def re_lane(lane_allframe,frame_index,tem, slope_diff):
+    '''
+    Re-id the lanes for each frame
+    '''
     prob_laneID = []
     nowframe = deepcopy(lane_allframe[frame_index])
-    print("這一幀測試")
+    # print("這一幀測試")
     for i, laneid in enumerate(nowframe.laneIDs):
-        print("laneid",laneid.name,laneid.equa[0])
+        # print("laneid",laneid.name,laneid.equa[0])
         """ 如果現在這一幀跟前一幀抓到的道路線數一樣，用前一幀比對這一幀"""
     if len(lane_allframe[frame_index]) == len(lane_allframe[frame_index-1]):
         # print('第{}幀有{}條道路線，前一幀有{}條道路線'.format(frame_index,len(lane_allframe[frame_index]),len(lane_allframe[frame_index-1])))
@@ -224,11 +296,11 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
         """ 如果現在這一幀比前一幀抓到的道路線數多，則用前一幀比對這一幀 """
     elif len(lane_allframe[frame_index]) > len(lane_allframe[frame_index-1]):
         # print('第{}幀有{}條道路線，前一幀有{}條道路線'.format(frame_index,len(lane_allframe[frame_index]),len(lane_allframe[frame_index-1])))
-        prob_frameids, b = zip(*tem) #檢驗前一幀是不是也有相同問題
-        # if frame_index-1 in prob_frameids:
-        #     assert False, 'error! 遇到了再處理'
+        prob_frameids, b = zip(*tem) #檢驗前一幀是不是也有相同問題 #TODO
+        if frame_index-1 and frame_index-2 in prob_frameids:
+            assert False, 'error! 遇到了再處理'
         
-        tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #紀錄問題幀
+        tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #Record the problem frame
         a, b = zip(*tem)
 
         #把多的線列為有問題線 

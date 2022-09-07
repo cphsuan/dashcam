@@ -97,6 +97,7 @@ class LaneEval(object):
 def match_multi_class(pred, target):
     pred_ids = np.unique(pred[pred > 0]) # find unique pred ids
     target_ids = np.unique(target[target > 0]) # find unique target ids
+    # print("pred_ids",pred_ids,"target_ids",target_ids)
     pred_out = np.zeros_like(pred) # initialize output array
 
     # return input array if no lane points in prediction/target

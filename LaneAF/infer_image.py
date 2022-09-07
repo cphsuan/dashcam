@@ -77,9 +77,9 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 
-kwargs = {'batch_size': args.batch_size, 'shuffle': False, 'num_workers': 1}
-test_loader = DataLoader(TuSimple(args.dataset_dir, args.split, False), **kwargs)
-print(test_loader)
+# kwargs = {'batch_size': args.batch_size, 'shuffle': False, 'num_workers': 1}
+# test_loader = DataLoader(TuSimple(args.dataset_dir, args.split, False), **kwargs)
+# print(test_loader)
 #pdb.set_trace()
 
 # preprocessing image
@@ -110,6 +110,9 @@ def preprocessing(image,net):
     vaf_out = np.transpose(outputs['vaf'][0, :, :, :].detach().cpu().float().numpy(), (1, 2, 0))
     haf_out = np.transpose(outputs['haf'][0, :, :, :].detach().cpu().float().numpy(), (1, 2, 0))
 
+    # print(vaf_out)
+    # cv2.imshow("vaf_out",vaf_out)
+    # cv2.waitKey(0)
     # decode AFs to get lane instances
     seg_out = decodeAFs(mask_out[:, :, 0], vaf_out, haf_out, fg_thresh=128, err_thresh=5)
 

@@ -11,6 +11,7 @@ import numpy as np
 import cv2
 from pandas import array
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.cluster import SpectralClustering
 import torch
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
@@ -25,7 +26,6 @@ from utils.visualize import tensor2image, create_viz
 from tools.perspective_correction import *
 from tools.CustomerClass import *
 from tools.detect_tool import *
-
 #for mmdetection
 sys.path.append(r'/home/hsuan/Thesis/mmdetection/')
 from mmdet.apis import (inference_detector, init_detector)
@@ -71,14 +71,16 @@ kwargs = {'batch_size': args.batch_size, 'shuffle': False, 'num_workers': 1}
 
 
 def LaneAF(img, net):
-    """ LaneAF: Robust Multi-Lane Detection with Affinity Fields
-    https://github.com/sel118/LaneAF """
+    """
+    LaneAF: Robust Multi-Lane Detection with Affinity Fields
+    https://github.com/sel118/LaneAF 
+    """
     net.eval()
     img_transforms = transforms.Compose([
         tf.GroupRandomScale(size=(0.5, 0.5), interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST)),
         tf.GroupNormalize(mean=([0.485, 0.456, 0.406], (0, )), std=([0.229, 0.224, 0.225], (1, ))),])
     
-    # mask processing #暫時不處理
+    # TODO mask processing #暫時不處理
 
     input_img, _ = img_transforms((img, img))
     input_img = torch.from_numpy(input_img).permute(2, 0, 1).contiguous().float()
@@ -112,9 +114,11 @@ def LaneAF(img, net):
         # if test set labels are available
         # re-assign lane IDs to match with ground truth
         seg_out = match_multi_class(seg_out.astype(np.int64), input_seg[0, 0, :, :].detach().cpu().numpy().astype(np.int64))
-    img_out = create_viz(img, seg_out.astype(
-        np.uint8), mask_out, vaf_out, haf_out)
-    return seg_out, img_out
+    #img_out = create_viz(img, seg_out.astype(np.uint8), mask_out, vaf_out, haf_out)
+    ### LANEAF RESULT VIS ### 把create_viz拿出來
+    img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+    img_out_LaneAF = np.ascontiguousarray(img, dtype=np.uint8)
+    return seg_out, img_out_LaneAF
 
 
 def Detection(args, img):
@@ -160,6 +164,8 @@ if __name__ == "__main__":
     lane_allframe = [] #儲存每一幀的lanes，(包含修改過的)
     tem = [(-1,-1)] #儲存有問題的frameID and 每一幀的lanes(原始)
     slope_diff = 0.11 #線段的斜率相減小於的值，視為同一條線
+    lanecolor = [(0,0,255),(0,255,0),(255,0,0),(255,255,0),(255,0,255),(0,255,255)]
+
     while (cap.isOpened()):
         success, frame = cap.read()
         laneframe = LanePerFrame(str(frame_index))
@@ -175,7 +181,7 @@ if __name__ == "__main__":
             ### frame processing ###
             img = cv2.resize(frame[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
 
-            ### 前車蓋 ###
+            ### detect hood ###
             global egoH
             img, egoH = Detection(args, img)
             # cv2.imshow("img_out", img)
@@ -185,18 +191,24 @@ if __name__ == "__main__":
             img = img.astype(np.float32)/255  # (H, W, 3)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-            ### 抓出車道線 ###
+            ### Identify lane lines:LaneAF ###
             seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
-            ### 建立lane class ###
+            ### build centerline and Lane Info (stored in laneframe)  ###
             laneframe = centerline(seg_out_LaneAF,laneframe)
             lane_allframe.append(laneframe)   
             ### re-Lane ###
             #第一幀pass
-            ### 道路線位置判斷 ###
+            ### lane vis ###
+            for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
+                # print("laneid",laneid.name,laneid.equa[0])
+                cols, rows = zip(*laneid.allpoints)
+                for r, c in zip(rows, cols):
+                    cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[i], 1)
+            ### Determine the location of the lanes ###
             lane_loc = lane_loc_f(laneframe)
-            ### 消失點 ###
+            ### Calculate the vanishing point ###
             Vpoint = vanishing_point(lane_loc)
-            ### 透視變換 ###
+            ### Perspective transform ###
             img_out, warped, pm= perspective_transform(parm, egoH, Vpoint, lane_loc, img_out_LaneAF)
             ### 建立剪裁參數 ###
             crop_loc(pm[0],pm[1],laneframe,parm)
@@ -215,19 +227,23 @@ if __name__ == "__main__":
             img = cv2.resize(img[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-            ### 抓出車道線 ###
+            ### Identify lane lines:LaneAF ###
             seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
             # cv2.imshow("img_out", img_out_LaneAF)
             # cv2.waitKey(0)
-            ### 建立lane class ###
+            ### build centerline and Lane Info (stored in laneframe) ###
             laneframe = centerline(seg_out_LaneAF,laneframe)
-            ### re-Lane ###
             lane_allframe.append(laneframe)
+            ### re-Lane ###
             lane_allframe, tem = re_lane(lane_allframe,frame_index,tem, slope_diff)
+            ### lane vis ###
             # for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
-            #     print("laneid",laneid.name,laneid.equa[0])
+            #     # print("laneid",laneid.name,laneid.equa[0])
+            #     cols, rows = zip(*laneid.allpoints)
+            #     for r, c in zip(rows, cols):
+            #         cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[i], 1)
+
             ### 道路線位置判斷 ###
-            # print(lane_allframe[frame_index])
             lane_loc = lane_loc_f(lane_allframe[frame_index])
             ### 消失點 ###
             Vpoint = vanishing_point(lane_loc)
@@ -237,7 +253,8 @@ if __name__ == "__main__":
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接
             
-            # cv2.imshow("img_out", img)
+            warped2 = cv2.resize(warped,None,fx=0.2,fy=0.2,interpolation=cv2.INTER_LINEAR)
+            # cv2.imshow("img_out", warped2)
             # cv2.waitKey(0)
             # cv2.destroyAllWindows()
             videoWrite.write(img)
