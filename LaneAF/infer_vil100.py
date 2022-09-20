@@ -127,7 +127,6 @@ def Detection(args, img):
     model = init_detector(args.detconfig, args.detcheckpoint, device='cuda:0')
     # test a single image
     result = inference_detector(model, img)
-    print(result[0])
     egobboxs = []
     if len(result[0])> 0 :
         sc_row, _ = np.where(result[0]== np.max(result[0],axis=0)[4]) # the highest score

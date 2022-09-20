@@ -8,7 +8,7 @@ def camera_correction(frame):
     distCoeff = np.zeros((4,1),np.float64)
 
     # add your coefficients here!
-    k1 = -1.0e-5; # negative to remove barrel distortion
+    k1 = -0.00001; # negative to remove barrel distortion
     k2 = 0.0;
     p1 = 0.0;
     p2 = 0.0;
