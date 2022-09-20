@@ -26,12 +26,13 @@ from utils.visualize import tensor2image, create_viz
 from tools.perspective_correction import *
 from tools.CustomerClass import *
 from tools.detect_tool import *
+from tools.camera_correction import *
 #for mmdetection
 sys.path.append(r'/home/hsuan/Thesis/mmdetection/')
 from mmdet.apis import (inference_detector, init_detector)
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
-parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/0_Road014_Trim004_frames.avi', help='path to input video')
+parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/1_Road014_Trim001_frames.avi', help='path to input video')
 parser.add_argument('--dataset-dir', type=str , default='/media/hsuan/data/CULane', help='path to dataset')
 parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/laneaf-weights/culane-weights/dla34/net_0033.pth', help='path to pre-trained model snapshot')
 parser.add_argument('--seed', type=int, default=1 , help='set seed to some constant value to reproduce experiments')
@@ -128,15 +129,17 @@ def Detection(args, img):
     result = inference_detector(model, img)
     print(result[0])
     egobboxs = []
-    if result[0]:
-        for rec in result[0]:
-            x1, y1, x2, y2, score = rec[0], rec[1], rec[2], rec[3], rec[4]
-            if score > args.detscore_thr:
-                print(x1, y1, x2, y2)
-                box = {'label': model.CLASSES[0], 'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2)}
-                egobboxs.append(box)
-                drawBoundingBox(img, egobboxs)
-                return img, y1
+    if len(result[0])> 0 :
+        sc_row, _ = np.where(result[0]== np.max(result[0],axis=0)[4]) # the highest score
+        x1, y1, x2, y2, score = result[0][sc_row][0][0], result[0][sc_row][0][1], result[0][sc_row][0][2], result[0][sc_row][0][3], result[0][sc_row][0][4]
+        
+        if score > args.detscore_thr:
+            print(x1, y1, x2, y2)
+            box = {'label': model.CLASSES[0], 'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2)}
+            egobboxs.append(box)
+            drawBoundingBox(img, egobboxs)
+            return img, y1
+
     return img, None
 
 if __name__ == "__main__":
@@ -178,6 +181,9 @@ if __name__ == "__main__":
             parm.frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
             parm.fps = cap.get(cv2.CAP_PROP_FPS)
 
+            ### carema correction (barrel distortion) ###
+            frame, cam, distCoeff = camera_correction(frame)
+
             ### frame processing ###
             img = cv2.resize(frame[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
 
@@ -218,10 +224,15 @@ if __name__ == "__main__":
 
             videoWrite = cv2.VideoWriter('/home/hsuan/results/result.avi', fourcc, parm.fps, (int(parm.IMG_H+parm.crop[1]-parm.crop[0]), int(parm.IMG_W)))
             videoWrite.write(img)
+
         elif (frame_index+1) == (parm.frame_count): #最後一幀結束
             print("Stream end. Exiting ...")
             break
+
         else:
+            ### carema correction (barrel distortion) ###
+            frame = cv2.undistort(frame,cam,distCoeff)
+
             ### frame processing ###
             img = frame.astype(np.float32)/255  # (H, W, 3)
             img = cv2.resize(img[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
@@ -229,7 +240,7 @@ if __name__ == "__main__":
 
             ### Identify lane lines:LaneAF ###
             seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
-            # cv2.imshow("img_out", img_out_LaneAF)
+            # cv2.imshow("img_out", seg_out_LaneAF*40)
             # cv2.waitKey(0)
             ### build centerline and Lane Info (stored in laneframe) ###
             laneframe = centerline(seg_out_LaneAF,laneframe)
