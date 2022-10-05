@@ -310,19 +310,12 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
         tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #Record the problem frame
         # if frame_index-1 and frame_index-2 in prob_frameids: #檢驗前一幀是不是也有相同問題
         #     assert False, 'error3! 遇到了再處理'
-        for i, laneid in enumerate(nowframe.laneIDs):
-            print("laneid",laneid.name,laneid.equa[0])
-        for i, laneid in enumerate(prevframe.laneIDs):
-            print("laneid",laneid.name,laneid.equa[0])
 
         #把多的線列為有問題線 
         for k in range(len(lane_allframe[frame_index]) ,len(lane_allframe[frame_index-1])):
             prevframe.laneIDs[k].name = "prob_"+ lane_allframe[frame_index-1].laneIDs[k].name
             prob_laneID.append(prevframe.laneIDs[k])
             del prevframe.laneIDs[k]
-        
-        for laneid in prob_laneID:
-            print("prob_laneID",laneid.name,laneid.equa[0])
 
         nowframe,_ = re_lane_f(nowframe,prevframe,prob_laneID,slope_diff)
 
