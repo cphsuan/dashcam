@@ -18,6 +18,9 @@ class LanePerFrame:
 
     def __len__(self):
         return len(self.laneIDs)
+    
+    def sort(self):
+        self.laneIDs = sorted(self.laneIDs, key = lambda s: s.equa[0])
 
 class Parm:
     def __init__(self,IMG_H, IMG_W):

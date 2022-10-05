@@ -167,7 +167,8 @@ if __name__ == "__main__":
     lane_allframe = [] #儲存每一幀的lanes，(包含修改過的)
     tem = [(-1,-1)] #儲存有問題的frameID and 每一幀的lanes(原始)
     slope_diff = 0.15 #線段的斜率相減小於的值，視為同一條線
-    lanecolor = [(0,0,255),(0,255,0),(255,0,0),(255,255,0),(255,0,255),(0,255,255)]
+    lanecolor = {"LaneID_1":(0,0,255),"LaneID_2":(0,255,0),"LaneID_3":(255,0,0),"LaneID_4":(255,255,0),"LaneID_5":(255,0,255),"LaneID_6":(0,255,255)}
+    # [(0,0,255),(0,255,0),(255,0,0),(255,255,0),(255,0,255),(0,255,255)]
 
     while (cap.isOpened()):
         success, frame = cap.read()
@@ -201,7 +202,8 @@ if __name__ == "__main__":
             seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
             ### build centerline and Lane Info (stored in laneframe)  ###
             laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
-            lane_allframe.append(laneframe)   
+            laneframe.sort()
+            lane_allframe.append(laneframe)
             ### re-Lane ###
             #第一幀pass
             ### lane vis ###
@@ -209,7 +211,7 @@ if __name__ == "__main__":
                 # print("laneid",laneid.name,laneid.equa[0])
                 cols, rows = zip(*laneid.allpoints)
                 for r, c in zip(rows, cols):
-                    cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[i], 1)
+                    cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[laneid.name], 1)
             # cv2.imshow("img_out", img_out_LaneAF)
             # cv2.waitKey(0)
             ### Determine the location of the lanes ###
@@ -243,15 +245,16 @@ if __name__ == "__main__":
             # cv2.waitKey(0)
             ### build centerline and Lane Info (stored in laneframe) ###
             laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
+            laneframe.sort()
             lane_allframe.append(laneframe)
             ### re-Lane ###
             lane_allframe, tem = re_lane(lane_allframe,frame_index,tem, slope_diff)
             ### lane vis ###
             for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
-                # print("laneid",laneid.name,laneid.equa[0])
+                # print("laneid",laneid.name,laneid.equa[0])            ,
                 cols, rows = zip(*laneid.allpoints)
                 for r, c in zip(rows, cols):
-                    cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[i], 1)
+                    cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[laneid.name], 1)
             # cv2.imshow("img_out", img_out_LaneAF)
             # cv2.waitKey(0)
             ### 道路線位置判斷 ###
@@ -263,8 +266,7 @@ if __name__ == "__main__":
             ### 剪裁圖片 ###
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接
-            
-            warped2 = cv2.resize(warped,None,fx=0.2,fy=0.2,interpolation=cv2.INTER_LINEAR)
+            img = cv2.putText(img, ("frame: " + str(frame_index)), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1,cv2.LINE_AA)
             # print(np.shape(img))
             # cv2.imshow("img_out", img)
             # cv2.waitKey(0)
