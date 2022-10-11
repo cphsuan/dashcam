@@ -198,6 +198,15 @@ def crop_loc(ProjY,M,laneframe,parm):
         crop_x.append(dst[0])
     parm.crop = (round(min(crop_x)-200,-2) if round(min(crop_x)-200,-2) > 0 else 0, round(max(crop_x)+200,-2))
 
+def arrequa(laneframe):
+    """product array (each lane's equa)"""
+    arr_euqa = []
+    for i, laneid in enumerate(laneframe.laneIDs):
+        # print("laneid",laneid.name,laneid.equa[0])
+        arr_euqa.append(laneid.equa[0])
+    arr_euqa = np.array(arr_euqa)
+    return arr_euqa
+
 def re_lane_f(A_laneframe,B_laneframe,prob_laneID,slope_diff):
     # A_laneframe = lane_allframe[frame_index-1]
     # B_laneframe = nowframe
@@ -214,58 +223,51 @@ def re_lane_f(A_laneframe,B_laneframe,prob_laneID,slope_diff):
                     B_laneframe.laneIDs[i] = deepcopy(B_laneframe.laneIDs[j])
                     B_laneframe.laneIDs[j] = deepcopy(tem_lane)
                     break
-                if (j == (len((B_laneframe))-1)): #判斷是最後一條線，檢查問題線
-                    if len(prob_laneID) != 0:
-                        for prob_index, prob in enumerate(prob_laneID):
-                            if(abs(laneid_prev.equa[0] - prob.equa[0]) <= slope_diff):
-                                B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
-                                prob_laneID.append(B_laneframe.laneIDs[i])
-                                prob.name = laneid_prev.name
-                                B_laneframe.laneIDs[i] = prob
-                                del prob_laneID[prob_index]
-                                break
-                        else:
-                            # 如果都沒找到
-                            input()
+            else: #如果沒找到
+                if prob_laneID: #len(prob_laneID) != 0 未測試
+                    for prob_index, prob in enumerate(prob_laneID):
+                        if(abs(laneid_prev.equa[0] - prob.equa[0]) <= slope_diff):
                             B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
                             prob_laneID.append(B_laneframe.laneIDs[i])
+
+                            prob.name = laneid_prev.name
+                            B_laneframe.laneIDs[i] = deepcopy(prob)
+                            del prob_laneID[prob_index]
                             break
-        else:#最後一條直接檢查問題線
-            if len(prob_laneID) != 0:
-                for prob_index, prob in enumerate(prob_laneID):
-                    if(abs(laneid_prev.equa[0] - prob.equa[0]) <= slope_diff):
-                        B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
-                        prob_laneID.append(B_laneframe.laneIDs[i])
-                        prob.name = laneid_prev.name
-                        B_laneframe.laneIDs[i] = prob
-                        del prob_laneID[prob_index]
-                        break
                 else:
-                    # 如果都沒找到，把這條加到問題線裡
+                    # 如果都沒找到 #TODO 還沒寫完
                     input()
                     B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
                     prob_laneID.append(B_laneframe.laneIDs[i])
                     break
+
+        else:#最後一條直接檢查問題線
+            if prob_laneID: #len(prob_laneID) != 0 未測試
+                for prob_index, prob in enumerate(prob_laneID):
+                    if(abs(laneid_prev.equa[0] - prob.equa[0]) <= slope_diff):
+                        B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
+                        prob_laneID.append(B_laneframe.laneIDs[i])
+
+                        prob.name = laneid_prev.name
+                        B_laneframe.laneIDs[i] = deepcopy(prob)
+                        del prob_laneID[prob_index]
+                        break
+            else:
+                # 如果都沒找到，把這條加到問題線裡#TODO  
+                input()
+                B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
+                prob_laneID.append(B_laneframe.laneIDs[i])
+                break
     
     return A_laneframe, B_laneframe
-
-def arrequa(laneframe):
-    """product array (each lane's equa)"""
-    arr_euqa = []
-    for i, laneid in enumerate(laneframe.laneIDs):
-        # print("laneid",laneid.name,laneid.equa[0])
-        arr_euqa.append(laneid.equa[0])
-    arr_euqa = np.array(arr_euqa)
-    return arr_euqa
 
 def re_lane(lane_allframe,frame_index,tem, slope_diff):
     '''
     Re-id the lanes for each frame
     '''
+    nowframe, prevframe = deepcopy(lane_allframe[frame_index]), deepcopy(lane_allframe[frame_index-1])
     prob_laneID = []
-    nowframe = deepcopy(lane_allframe[frame_index])
-    prevframe = deepcopy(lane_allframe[frame_index-1])
-    prob_frameids, prob_frames = zip(*tem)  #TODO prob_frame
+    prob_frameids, prob_frames = zip(*tem)  #prob_frame
     """ 如果現在這一幀跟前一幀抓到的道路線數一樣，用前一幀比對這一幀"""
     if len(nowframe) == len(prevframe):
         _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID, slope_diff)
@@ -273,18 +275,18 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
     elif len(nowframe) > len(prevframe):
         """ 如果現在這一幀(4)比前一幀(3)抓到的道路線數多，則用前一幀比對這一幀 """
         tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #Record the problem frame
-        if frame_index-1 and frame_index-2 in prob_frameids: #檢驗前一幀是不是也有相同問題
+        if frame_index-1 in prob_frameids: #檢驗前一幀是不是也有相同問題
             prob_prevframe = deepcopy(prob_frames[prob_frameids.index(frame_index-1)])
             prob_prevframe.sort()
+
             prob_prevframe_equa = arrequa(prob_prevframe)
             nowframe_equa = arrequa(nowframe)
-
+            
             if len(prob_prevframe_equa) == len(nowframe_equa):
                 cal_equa = nowframe_equa - prob_prevframe_equa
 
                 if (np.array(abs(cal_equa))<= slope_diff).all() :
                     prevframe_equa = arrequa(prevframe)
-
                     diff_idx = np.where(np.in1d(prob_prevframe_equa, prevframe_equa) == False)[0]
                     
                     j = 0
@@ -294,35 +296,42 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
                         j = j+1
 
                     _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID,slope_diff)
+                else:
+                    #TODO 換道問題 導致 斜率都變了QQ
+                    diff_idx = np.where((np.array(abs(cal_equa))<= slope_diff) == False)[0]
+                    print(diff_idx)
+                    input()
             else:
+                #TODO 抓到的線長度不一樣
                 assert("error2! 遇到了再處理")
+
         else:
-            #把多的線列為有問題線 
+            #把多的線列為有問題線
             for k in range(len(lane_allframe[frame_index-1]) ,len(lane_allframe[frame_index])):
                 nowframe.laneIDs[k].name = "prob_"+ lane_allframe[frame_index].laneIDs[k].name
                 prob_laneID.append(nowframe.laneIDs[k])
-                del nowframe.laneIDs[k]
+            del nowframe.laneIDs[len(lane_allframe[frame_index-1]):]
 
             _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID,slope_diff)
 
     else:
         """ 如果現在這一幀(3)比前一幀(4)抓到的道路線數少，則用這一幀比對前一幀 """
         tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #Record the problem frame
-        # if frame_index-1 and frame_index-2 in prob_frameids: #檢驗前一幀是不是也有相同問題
-        #     assert False, 'error3! 遇到了再處理'
+        if frame_index-1 in prob_frameids: #檢驗前一幀是不是也有相同問題 #TODO 
+            assert False, 'error3! 遇到了再處理'
 
         #把多的線列為有問題線 
         for k in range(len(lane_allframe[frame_index]) ,len(lane_allframe[frame_index-1])):
             prevframe.laneIDs[k].name = "prob_"+ lane_allframe[frame_index-1].laneIDs[k].name
             prob_laneID.append(prevframe.laneIDs[k])
-            del prevframe.laneIDs[k]
+        del prevframe.laneIDs[len(lane_allframe[frame_index]):]
 
         nowframe,_ = re_lane_f(nowframe,prevframe,prob_laneID,slope_diff)
 
     #移除無法配對到的問題線
     for idx, laneid in enumerate(nowframe.laneIDs):
         # print("laneid",laneid.name,laneid.equa[0])
-        if "prob" in  laneid.name:
+        if "prob" in laneid.name:
             del nowframe.laneIDs[idx]
 
     lane_allframe[frame_index] = nowframe

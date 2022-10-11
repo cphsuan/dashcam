@@ -155,6 +155,7 @@ class Root(nn.Module):
         self.residual = residual
 
     def forward(self, *x):
+        # 輸入是多個層輸出的結果
         children = x
         x = self.conv(torch.cat(x, 1))
         x = self.bn(x)
@@ -235,10 +236,12 @@ class DLA(nn.Module):
                       padding=3, bias=False),
             nn.BatchNorm2d(channels[0], momentum=BN_MOMENTUM),
             nn.ReLU(inplace=True))
+        # 在前兩層使用卷積層
         self.level0 = self._make_conv_level(
             channels[0], channels[0], levels[0])
         self.level1 = self._make_conv_level(
             channels[0], channels[1], levels[1], stride=2)
+
         self.level2 = Tree(levels[2], block, channels[1], channels[2], 2,
                            level_root=False,
                            root_residual=residual_root)

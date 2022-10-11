@@ -1,5 +1,5 @@
 import math
-
+from copy import deepcopy
 class LanePerFrame:
     """
     All lanes Info in this frame.
@@ -14,7 +14,7 @@ class LanePerFrame:
         self.laneIDs.append(laneID)
 
     def __str__(self):
-        return f"LaneFrame_Name is {self.name}, laneIDs is {self.laneIDs}"
+        return f"LaneFrame_Name is {self.name}, laneID name is {[i.name for i in self.laneIDs]}, laneID equa is {[i.equa[0] for i in self.laneIDs]}"
 
     def __len__(self):
         return len(self.laneIDs)

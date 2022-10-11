@@ -1,3 +1,4 @@
+import sys
 import os
 import shutil
 import glob
@@ -14,6 +15,7 @@ from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
+sys.path.append(r'/home/hsuan/Thesis/LaneAF/')
 from utils.affinity_fields import generateAFs
 import datasets.transforms as tf
 
