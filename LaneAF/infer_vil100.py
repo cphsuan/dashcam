@@ -27,13 +27,14 @@ from tools.perspective_correction import *
 from tools.CustomerClass import *
 from tools.detect_tool import *
 from tools.camera_correction import *
+import matplotlib.pyplot as plt
 #for mmdetection
 sys.path.append(r'/home/hsuan/Thesis/mmdetection/')
 from mmdet.apis import (inference_detector, init_detector)
 import pysnooper
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
-parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/1_Road018_Trim006_frames.avi', help='path to input video')
+parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/0_Road001_Trim003_frames.avi', help='path to input video')
 parser.add_argument('--dataset-dir', type=str , default='/media/hsuan/data/CULane', help='path to dataset')
 parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/laneaf-weights/culane-weights/dla34/net_0033.pth', help='path to pre-trained model snapshot')
 parser.add_argument('--seed', type=int, default=1 , help='set seed to some constant value to reproduce experiments')
@@ -96,6 +97,24 @@ def LaneAF(img, net):
 
     # do the forward pass
     outputs = net(input_img)[-1]
+    #test #TODO
+    #轉成 heatmap
+    heatmap = torch.sigmoid(outputs['hm'])
+    heat = heatmap.squeeze(0) #降維操作,尺寸變為(1, 128, 240)
+    heat_mean = torch.mean(heat,dim=0)#對各卷積層(1)求平均值,尺寸變為(128, 240)
+    heatmap = heat_mean.cpu().detach().numpy()
+    heatmap /= np.max(heatmap)#minmax歸一化處理
+    heatmap = cv2.resize(heatmap,(960,512))
+    heatmap = np.uint8(255*heatmap)#畫素值縮放至(0,255)之間,uint8型別,這也是前面需要做歸一化的原因,否則畫素值會溢位255(也就是8位顏色通道)
+    heatmap = cv2.applyColorMap(heatmap,cv2.COLORMAP_JET)#顏色變換
+
+    # input_img = input_img.squeeze(0) #降維操作,尺寸變為(1, 128, 240)
+    img = tensor2image(input_img.detach(), np.array(
+        [0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225]))
+    output = cv2.addWeighted(img, 0.5, heatmap, 0.3, 50)
+    # cv2.imshow("input_img",output)
+    # cv2.waitKey()
+    #########
 
     # convert to arrays
     img = tensor2image(input_img.detach(), np.array(
@@ -104,6 +123,79 @@ def LaneAF(img, net):
                             np.array([0.0 for _ in range(3)], dtype='float32'), np.array([1.0 for _ in range(3)], dtype='float32'))
     vaf_out = np.transpose(outputs['vaf'][0, :, :, :].detach().cpu().float().numpy(), (1, 2, 0))
     haf_out = np.transpose(outputs['haf'][0, :, :, :].detach().cpu().float().numpy(), (1, 2, 0))
+
+    #####TODO 改
+    print("vaf_out",np.shape(outputs['vaf']))
+    print("haf_out",np.shape(outputs['haf']))
+    hm = outputs['hm'].sigmoid_()
+    def _nms(heat, kernel=3):
+        pad = (kernel - 1) // 2
+
+        hmax = torch.nn.functional.max_pool2d(
+            heat, (kernel, kernel), stride=1, padding=pad)
+        keep = (hmax == heat).float()
+        return heat * keep
+    heat = _nms(hm)
+    print(heat)
+    print(np.shape(heat))
+
+    def _gather_feat(feat, ind, mask=None):
+        dim  = feat.size(2)
+        ind  = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
+        feat = feat.gather(1, ind)
+        if mask is not None:
+            mask = mask.unsqueeze(2).expand_as(feat)
+            feat = feat[mask]
+            feat = feat.view(-1, dim)
+        return feat
+
+    def _topk(scores, K=40):
+        batch, cat, height, width = scores.size()
+        
+        topk_scores, topk_inds = torch.topk(scores.view(batch, cat, -1), K)
+
+        topk_inds = topk_inds % (height * width)
+        topk_ys   = torch.true_divide(topk_inds, width).int().float()
+        topk_xs   = (topk_inds % width).int().float()
+        
+        topk_score, topk_ind = torch.topk(topk_scores.view(batch, -1), K)
+        topk_clses = torch.true_divide(topk_ind, K).int()
+        topk_inds = _gather_feat(
+            topk_inds.view(batch, -1, 1), topk_ind).view(batch, K)
+        topk_ys = _gather_feat(topk_ys.view(batch, -1, 1), topk_ind).view(batch, K)
+        topk_xs = _gather_feat(topk_xs.view(batch, -1, 1), topk_ind).view(batch, K)
+
+        return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
+
+    def _tranpose_and_gather_feat(feat, ind):
+        feat = feat.permute(0, 2, 3, 1).contiguous()
+        feat = feat.view(feat.size(0), -1, feat.size(3))
+        feat = _gather_feat(feat, ind)
+        return feat
+
+    scores, inds, clses, ys, xs = _topk(heat, K=100)
+    batch, cat, height, width = heat.size()
+    K=100
+
+    xs = xs.view(batch, K, 1) + 0.5
+    ys = ys.view(batch, K, 1) + 0.5
+    wh = _tranpose_and_gather_feat(output['vaf'], inds)
+
+    wh = wh.view(batch, K, 2)
+    clses = clses.view(batch, K, 1).float()
+    scores = scores.view(batch, K, 1)
+
+    bboxes = torch.cat([xs - wh[..., 0:1] / 2,
+                        ys - wh[..., 1:2] / 2,
+                        xs + wh[..., 0:1] / 2,
+                        ys + wh[..., 1:2] / 2], dim=2)
+    detections = torch.cat([bboxes, scores, clses], dim=2)
+    print(detections)
+    input()
+
+
+
+    #######
 
     # decode AFs to get lane instances
     seg_out = decodeAFs(mask_out[:, :, 0], vaf_out,haf_out, fg_thresh=128, err_thresh=5)
@@ -168,7 +260,7 @@ if __name__ == "__main__":
     tem = [(-1,-1)] #儲存有問題的frameID and 每一幀的lanes(原始)
     slope_diff = 0.15 #線段的斜率相減小於的值，視為同一條線
     lanecolor = {"LaneID_1":(0,0,255),"LaneID_2":(0,255,0),"LaneID_3":(255,0,0),"LaneID_4":(255,255,0),"LaneID_5":(255,0,255),"LaneID_6":(0,255,255)}
-    # [(0,0,255),(0,255,0),(255,0,0),(255,255,0),(255,0,255),(0,255,255)]
+
 
     while (cap.isOpened()):
         success, frame = cap.read()
@@ -203,6 +295,8 @@ if __name__ == "__main__":
             ### build centerline and Lane Info (stored in laneframe)  ###
             laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
             laneframe.sort()
+            print(laneframe)
+            input()
             lane_allframe.append(laneframe)
             ### re-Lane ###
             #第一幀pass

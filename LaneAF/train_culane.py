@@ -20,11 +20,11 @@ from models.dla.pose_dla_dcn import get_pose_net
 from models.erfnet.erfnet import ERFNet
 from models.enet.ENet import ENet
 from models.loss import FocalLoss, IoULoss, RegL1Loss
-
+import math
 
 parser = argparse.ArgumentParser('Options for training LaneAF models in PyTorch...')
-parser.add_argument('--dataset-dir', type=str, default=None, help='path to dataset')
-parser.add_argument('--output-dir', type=str, default=None, help='output directory for model and logs')
+parser.add_argument('--dataset-dir', type=str, default='/media/hsuan/data/CULane', help='path to dataset')
+parser.add_argument('--output-dir', type=str, default='/home/hsuan/TrainingResult', help='output directory for model and logs')
 parser.add_argument('--backbone', type=str, default='dla34', help='type of model backbone (dla34/erfnet/enet)')
 parser.add_argument('--snapshot', type=str, default=None, help='path to pre-trained model snapshot')
 parser.add_argument('--batch-size', type=int, default=8, metavar='N', help='batch size for training')
@@ -35,7 +35,7 @@ parser.add_argument('--loss-type', type=str, default='wbce', help='type of class
 parser.add_argument('--log-schedule', type=int, default=10, metavar='N', help='number of iterations to print/save log after')
 parser.add_argument('--seed', type=int, default=1, help='set seed to some constant value to reproduce experiments')
 parser.add_argument('--no-cuda', action='store_true', default=False, help='do not use cuda for training')
-parser.add_argument('--random-transforms', action='store_true', default=False, help='apply random transforms to input during training')
+parser.add_argument('--random-transforms', action='store_true', default=True, help='apply random transforms to input during training')
 
 args = parser.parse_args()
 # check args
@@ -44,18 +44,18 @@ if args.dataset_dir is None:
 
 # setup args
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-if args.output_dir is None:
-    args.output_dir = datetime.now().strftime("%Y-%m-%d-%H:%M")
-    args.output_dir = os.path.join('.', 'experiments', 'culane', args.output_dir)
+if os.path.exists(args.output_dir):
+    args.output_dir = os.path.join(args.output_dir,"culane",datetime.now().strftime("%Y-%m-%d-%H:%M"))
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+    else:
+        assert False, 'Output directory already exists!'
+
 
 args.backbone = args.backbone.lower()
 if args.backbone not in ['dla34', 'erfnet', 'enet']:
     assert False, 'Incorrect model backbone provided!'
 
-if not os.path.exists(args.output_dir):
-    os.makedirs(args.output_dir)
-else:
-    assert False, 'Output directory already exists!'
 
 # store config in output directory
 with open(os.path.join(args.output_dir, 'config.json'), 'w') as f:

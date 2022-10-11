@@ -120,6 +120,9 @@ class CULane(Dataset):
                     self.seg_list.append(os.path.join(self.data_dir_path, 'laneseg_label_w16', l[1:-3] + 'png'))
 
     def __getitem__(self, idx):
+        print(self.img_list[idx])
+        print(idx)
+        input()
         img = cv2.imread(self.img_list[idx]).astype(np.float32)/255. # (H, W, 3)
         img = cv2.resize(img[14:, :, :], (1664, 576), interpolation=cv2.INTER_LINEAR)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
