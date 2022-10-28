@@ -32,9 +32,11 @@ import matplotlib.pyplot as plt
 sys.path.append(r'/home/hsuan/Thesis/mmdetection/')
 from mmdet.apis import (inference_detector, init_detector)
 import pysnooper
+import time
+import operator
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
-parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/0_Road001_Trim003_frames.avi', help='path to input video')
+parser.add_argument('--input_video', type=str , default='/media/hsuan/data/VIL100/videos/2_Road017_Trim001_frames.avi', help='path to input video')
 parser.add_argument('--dataset-dir', type=str , default='/media/hsuan/data/CULane', help='path to dataset')
 parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/laneaf-weights/culane-weights/dla34/net_0033.pth', help='path to pre-trained model snapshot')
 parser.add_argument('--seed', type=int, default=1 , help='set seed to some constant value to reproduce experiments')
@@ -97,24 +99,62 @@ def LaneAF(img, net):
 
     # do the forward pass
     outputs = net(input_img)[-1]
-    #test #TODO
-    #轉成 heatmap
-    heatmap = torch.sigmoid(outputs['hm'])
-    heat = heatmap.squeeze(0) #降維操作,尺寸變為(1, 128, 240)
-    heat_mean = torch.mean(heat,dim=0)#對各卷積層(1)求平均值,尺寸變為(128, 240)
-    heatmap = heat_mean.cpu().detach().numpy()
-    heatmap /= np.max(heatmap)#minmax歸一化處理
-    heatmap = cv2.resize(heatmap,(960,512))
-    heatmap = np.uint8(255*heatmap)#畫素值縮放至(0,255)之間,uint8型別,這也是前面需要做歸一化的原因,否則畫素值會溢位255(也就是8位顏色通道)
-    heatmap = cv2.applyColorMap(heatmap,cv2.COLORMAP_JET)#顏色變換
+    # #test #TODO
+    # #轉成 heatmap
+    # heatmap = torch.sigmoid(outputs['hm']) #尺寸為(1, 1, 128, 240)
+    # heat = heatmap.squeeze(0) #降維操作,尺寸變為(1, 128, 240)
+    # heat_mean = torch.mean(heat,dim=0)#對各卷積層(1)求平均值,尺寸變為(128, 240)
+    # heatmap = heat_mean.cpu().detach().numpy()
+    # heatmap /= np.max(heatmap)#minmax歸一化處理
+    # heatmap = cv2.resize(heatmap,(960,512))
+    # heatmap = np.uint8(255*heatmap)#畫素值縮放至(0,255)之間,uint8型別,這也是前面需要做歸一化的原因,否則畫素值會溢位255(也就是8位顏色通道)
+    # heatmap = cv2.applyColorMap(heatmap,cv2.COLORMAP_JET)#顏色變換
 
-    # input_img = input_img.squeeze(0) #降維操作,尺寸變為(1, 128, 240)
-    img = tensor2image(input_img.detach(), np.array(
-        [0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225]))
-    output = cv2.addWeighted(img, 0.5, heatmap, 0.3, 50)
+    # # input_img 
+    # img = tensor2image(input_img.detach(), np.array(
+    #     [0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225]))
+    # output = cv2.addWeighted(img, 0.5, heatmap, 0.3, 50)
     # cv2.imshow("input_img",output)
     # cv2.waitKey()
-    #########
+
+    # # nms算法
+    # def _nms(heat, kernel=3):
+    #     pad = (kernel - 1) // 2  # pad = 1  
+
+    #     hmax = torch.nn.functional.max_pool2d(    # 使用max_pooling簡化計算
+    #         heat, (kernel, kernel), stride=1, padding=pad)
+    #     keep = (hmax == heat).float()  # 找到最大值們的相對位置，位置相同為true，否則False
+    #     return heat * keep
+    
+    # heatmap = torch.sigmoid(outputs['hm']) #尺寸為(1, 1, 128, 240)
+    # print(heatmap)
+    # print(np.shape(heatmap))
+
+    # heat = _nms(heatmap)
+    # print(heat)
+    # heat = heat.squeeze(0) #降維操作,尺寸變為(1, 128, 240)
+    # heat_mean = torch.mean(heat,dim=0)#對各卷積層(1)求平均值,尺寸變為(128, 240)
+    # heatmap = heat_mean.cpu().detach().numpy()
+    # heatmap /= np.max(heatmap)#minmax歸一化處理
+    # heatmap = cv2.resize(heatmap,(960,512))
+    # heatmap = np.uint8(255*heatmap)#畫素值縮放至(0,255)之間,uint8型別,這也是前面需要做歸一化的原因,否則畫素值會溢位255(也就是8位顏色通道)
+    # heatmap2 = cv2.applyColorMap(heatmap,cv2.COLORMAP_JET)#顏色變換
+
+    # # kmeans
+    # # model = SpectralClustering(n_clusters=3, affinity='nearest_neighbors',
+    # #                         assign_labels='kmeans')
+    # # labels = model.fit_predict(heatmap)
+    # # plt.scatter(heatmap[:,0], heatmap[:,1], c=labels,
+    # #             s=50, cmap='viridis');
+    # # plt.show()
+    #     # input_img 
+    # img = tensor2image(input_img.detach(), np.array(
+    #     [0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225]))
+    # output = cv2.addWeighted(img, 0.5, heatmap2, 0.3, 50)
+    # cv2.imshow("input_img",output)
+    # cv2.waitKey()
+    # # input()
+    # #########
 
     # convert to arrays
     img = tensor2image(input_img.detach(), np.array(
@@ -124,81 +164,20 @@ def LaneAF(img, net):
     vaf_out = np.transpose(outputs['vaf'][0, :, :, :].detach().cpu().float().numpy(), (1, 2, 0))
     haf_out = np.transpose(outputs['haf'][0, :, :, :].detach().cpu().float().numpy(), (1, 2, 0))
 
-    #####TODO 改
-    print("vaf_out",np.shape(outputs['vaf']))
-    print("haf_out",np.shape(outputs['haf']))
-    hm = outputs['hm'].sigmoid_()
-    def _nms(heat, kernel=3):
-        pad = (kernel - 1) // 2
-
-        hmax = torch.nn.functional.max_pool2d(
-            heat, (kernel, kernel), stride=1, padding=pad)
-        keep = (hmax == heat).float()
-        return heat * keep
-    heat = _nms(hm)
-    print(heat)
-    print(np.shape(heat))
-
-    def _gather_feat(feat, ind, mask=None):
-        dim  = feat.size(2)
-        ind  = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
-        feat = feat.gather(1, ind)
-        if mask is not None:
-            mask = mask.unsqueeze(2).expand_as(feat)
-            feat = feat[mask]
-            feat = feat.view(-1, dim)
-        return feat
-
-    def _topk(scores, K=40):
-        batch, cat, height, width = scores.size()
-        
-        topk_scores, topk_inds = torch.topk(scores.view(batch, cat, -1), K)
-
-        topk_inds = topk_inds % (height * width)
-        topk_ys   = torch.true_divide(topk_inds, width).int().float()
-        topk_xs   = (topk_inds % width).int().float()
-        
-        topk_score, topk_ind = torch.topk(topk_scores.view(batch, -1), K)
-        topk_clses = torch.true_divide(topk_ind, K).int()
-        topk_inds = _gather_feat(
-            topk_inds.view(batch, -1, 1), topk_ind).view(batch, K)
-        topk_ys = _gather_feat(topk_ys.view(batch, -1, 1), topk_ind).view(batch, K)
-        topk_xs = _gather_feat(topk_xs.view(batch, -1, 1), topk_ind).view(batch, K)
-
-        return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
-
-    def _tranpose_and_gather_feat(feat, ind):
-        feat = feat.permute(0, 2, 3, 1).contiguous()
-        feat = feat.view(feat.size(0), -1, feat.size(3))
-        feat = _gather_feat(feat, ind)
-        return feat
-
-    scores, inds, clses, ys, xs = _topk(heat, K=100)
-    batch, cat, height, width = heat.size()
-    K=100
-
-    xs = xs.view(batch, K, 1) + 0.5
-    ys = ys.view(batch, K, 1) + 0.5
-    wh = _tranpose_and_gather_feat(output['vaf'], inds)
-
-    wh = wh.view(batch, K, 2)
-    clses = clses.view(batch, K, 1).float()
-    scores = scores.view(batch, K, 1)
-
-    bboxes = torch.cat([xs - wh[..., 0:1] / 2,
-                        ys - wh[..., 1:2] / 2,
-                        xs + wh[..., 0:1] / 2,
-                        ys + wh[..., 1:2] / 2], dim=2)
-    detections = torch.cat([bboxes, scores, clses], dim=2)
-    print(detections)
-    input()
-
-
-
-    #######
+    # down_rate = 1 # downsample visualization by this factor
+    # fig, (ax1, ax2) = plt.subplots(1, 2)
+    # # visualize VAF #quiver畫箭頭
+    # ax1.title.set_text('VAF Plot')
+    # q = ax1.quiver(np.arange(0, 240, down_rate), -np.arange(0, 128, down_rate), 
+    #     vaf_out[::down_rate, ::down_rate, 0], -vaf_out[::down_rate, ::down_rate, 1], scale=120)
+    # # visualize HAF
+    # ax2.title.set_text('HAF Plot')
+    # q = ax2.quiver(np.arange(0, 240, down_rate), -np.arange(0, 128, down_rate), 
+    #     haf_out[::down_rate, ::down_rate, 0], 0, scale=120)
+    # plt.show()
 
     # decode AFs to get lane instances
-    seg_out = decodeAFs(mask_out[:, :, 0], vaf_out,haf_out, fg_thresh=128, err_thresh=5)
+    seg_out = decodeAFs(mask_out[:, :, 0], vaf_out,haf_out, fg_thresh=128, err_thresh=5,viz=False)
 
     ###
     if torch.any(torch.isnan(input_seg)):
@@ -209,6 +188,8 @@ def LaneAF(img, net):
         # re-assign lane IDs to match with ground truth
         seg_out = match_multi_class(seg_out.astype(np.int64), input_seg[0, 0, :, :].detach().cpu().numpy().astype(np.int64))
     img_out = create_viz(img, seg_out.astype(np.uint8), mask_out, vaf_out, haf_out)
+    # cv2.imshow("img_out", img_out)
+    # cv2.waitKey(0)
     ### LANEAF RESULT VIS ### 把create_viz拿出來
     img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
     img_out_LaneAF = np.ascontiguousarray(img, dtype=np.uint8)
@@ -258,9 +239,9 @@ if __name__ == "__main__":
     frame_index = 0
     lane_allframe = [] #儲存每一幀的lanes，(包含修改過的)
     tem = [(-1,-1)] #儲存有問題的frameID and 每一幀的lanes(原始)
-    slope_diff = 0.15 #線段的斜率相減小於的值，視為同一條線
+    diff = 2 #線段的斜率相減小於的值，視為同一條線
     lanecolor = {"LaneID_1":(0,0,255),"LaneID_2":(0,255,0),"LaneID_3":(255,0,0),"LaneID_4":(255,255,0),"LaneID_5":(255,0,255),"LaneID_6":(0,255,255)}
-
+    previous_L,previous_R=0,0
 
     while (cap.isOpened()):
         success, frame = cap.read()
@@ -285,7 +266,9 @@ if __name__ == "__main__":
             img, egoH, ego_box = Detection(args, img)
             # cv2.imshow("img_out", img)
             # cv2.waitKey(0)
-            print(ego_box)
+            transH = parm.IMG_W
+            if egoH: # If there is a hood below the picture
+                transH = egoH
             ### frame processing ###
             img = img.astype(np.float32)/255  # (H, W, 3)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -294,11 +277,22 @@ if __name__ == "__main__":
             seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
             ### build centerline and Lane Info (stored in laneframe)  ###
             laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
+            ### Determine the location of the lanes ###
+            lane_loc = lane_loc_f(laneframe,transH)
+            # for k, v in lane_loc.items():
+            #     print("lane_loc",k, v)
+            ### Calculate the vanishing point ###
+            Vpoint = vanishing_point(lane_loc)
+            laneframe.Vpoint = Vpoint
             laneframe.sort()
-            print(laneframe)
-            input()
             lane_allframe.append(laneframe)
+            H = lane_loc["right_near_center"].hor_x-lane_loc["left_near_center"].hor_x
+            L_ratio = (Vpoint[0]-lane_loc["left_near_center"].hor_x)/H
+            R_ratio = (lane_loc["right_near_center"].hor_x-Vpoint[0])/H
+            # print("range:",H,"L",L_ratio,"R",R_ratio)
             ### re-Lane ###
+            # print(lane_allframe[frame_index])
+            LaneID = [arr_type(lane_allframe[frame_index],3), [True]*len(lane_allframe[frame_index])]
             #第一幀pass
             ### lane vis ###
             for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
@@ -308,12 +302,8 @@ if __name__ == "__main__":
                     cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[laneid.name], 1)
             # cv2.imshow("img_out", img_out_LaneAF)
             # cv2.waitKey(0)
-            ### Determine the location of the lanes ###
-            lane_loc = lane_loc_f(laneframe)
-            ### Calculate the vanishing point ###
-            Vpoint = vanishing_point(lane_loc)
             ### Perspective transform ###
-            img_out, warped, pm= perspective_transform(parm, egoH, Vpoint, lane_loc, img_out_LaneAF)
+            img_out, warped, pm= perspective_transform(parm, transH, Vpoint, lane_loc, img_out_LaneAF)
             ### 建立剪裁參數 ###
             crop_loc(pm[0],pm[1],laneframe,parm)
             ### 剪裁圖片 ###
@@ -339,10 +329,36 @@ if __name__ == "__main__":
             # cv2.waitKey(0)
             ### build centerline and Lane Info (stored in laneframe) ###
             laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
+            ### 道路線位置判斷 ###
+            lane_loc = lane_loc_f(laneframe,transH)
+            ### 消失點 ###
+            Vpoint = vanishing_point(lane_loc)
+            laneframe.Vpoint = Vpoint
             laneframe.sort()
             lane_allframe.append(laneframe)
+
+            ### 判斷是否有換道 ###
+            H = lane_loc["right_near_center"].hor_x-lane_loc["left_near_center"].hor_x
+            # print("range:",H)
+            # print("L",(Vpoint[0]-lane_loc["left_near_center"].hor_x)/H,"R",(lane_loc["right_near_center"].hor_x-Vpoint[0])/H)
+
+            if abs((Vpoint[0]-lane_loc["left_near_center"].hor_x)/H-previous_L) >0.8:
+                
+                L_ratio = (Vpoint[0]-lane_loc["left_near_center"].hor_x)/H
+                R_ratio = (lane_loc["right_near_center"].hor_x-Vpoint[0])/H
+                change_lane = "NEW"
+
+            elif L_ratio- (Vpoint[0]-lane_loc["left_near_center"].hor_x)/H >0.05:
+                change_lane = True
+
+            else:
+                change_lane = False
+            # print("change_lane",change_lane)
+                # input()
+            previous_L,previous_R = (Vpoint[0]-lane_loc["left_near_center"].hor_x)/H, (lane_loc["right_near_center"].hor_x-Vpoint[0])/H
             ### re-Lane ###
-            lane_allframe, tem = re_lane(lane_allframe,frame_index,tem, slope_diff)
+            lane_allframe, tem, LaneID= re_lane(lane_allframe,frame_index,tem, diff,change_lane,LaneID)
+
             ### lane vis ###
             for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
                 # print("laneid",laneid.name,laneid.equa[0])            ,
@@ -351,16 +367,15 @@ if __name__ == "__main__":
                     cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[laneid.name], 1)
             # cv2.imshow("img_out", img_out_LaneAF)
             # cv2.waitKey(0)
-            ### 道路線位置判斷 ###
-            lane_loc = lane_loc_f(lane_allframe[frame_index])
-            ### 消失點 ###
-            Vpoint = vanishing_point(lane_loc)
             ### 透視變換 ###
-            img_out, warped, pm= perspective_transform(parm, egoH, Vpoint, lane_loc, img_out_LaneAF)
+            img_out, warped, pm= perspective_transform(parm, transH, Vpoint, lane_loc, img_out_LaneAF)
+            ###
+            cv2.circle(img_out,(int(Vpoint[0]),int(Vpoint[1])), 10, (0, 255, 255), 0)
+
             ### 剪裁圖片 ###
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接
-            img = cv2.putText(img, ("frame: " + str(frame_index)), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1,cv2.LINE_AA)
+            img = cv2.putText(img, ("frame: " + str(frame_index)), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 1,cv2.LINE_AA)
             # print(np.shape(img))
             # cv2.imshow("img_out", img)
             # cv2.waitKey(0)

@@ -1,5 +1,7 @@
 import math
 from copy import deepcopy
+
+from operator import attrgetter
 class LanePerFrame:
     """
     All lanes Info in this frame.
@@ -8,19 +10,21 @@ class LanePerFrame:
     """
     def __init__(self, frameid):
         self.name = "Lane_Frame"+frameid
+        self.Vpoint = "undefined"
         self.laneIDs = list()
     
     def add_lane(self, laneID):
         self.laneIDs.append(laneID)
 
     def __str__(self):
-        return f"LaneFrame_Name is {self.name}, laneID name is {[i.name for i in self.laneIDs]}, laneID equa is {[i.equa[0] for i in self.laneIDs]}"
+        return f"LaneFrame_Name is {self.name},VPoint is {self.Vpoint} ,laneID name is {[i.name for i in self.laneIDs]}, laneID equa is {[i.equa[0] for i in self.laneIDs]}, Hor_x is {[i.hor_x for i in self.laneIDs]}, Angle is {[i.angle for i in self.laneIDs]}"
 
     def __len__(self):
         return len(self.laneIDs)
     
     def sort(self):
-        self.laneIDs = sorted(self.laneIDs, key = lambda s: s.equa[0])
+        self.laneIDs.sort(key=attrgetter('hor_x'))
+        # sorted(self.laneIDs , key=lambda x: x.hor_x)
 
 class Parm:
     def __init__(self,IMG_H, IMG_W):

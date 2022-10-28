@@ -1,7 +1,9 @@
+from cv2 import sort
 import numpy as np
 import cv2
 from copy import deepcopy
 from typing import Dict, List
+import math
 import pysnooper
 #@pysnooper.snoop()
 class Lane:
@@ -19,9 +21,11 @@ class Lane:
         self.centerpoints = centerpoints
         self.allpoints = allpoints #所有點(已經放大)
         self.lanetype = "undefined"
+        self.hor_x = "undefined"
+        self.angle = "undefined"
     
     def __str__(self):
-        return f"Name is {self.name}, Equa is {self.equa}"
+        return f"Name is {self.name}, Equa is {self.equa}, Hor_x is {self.hor_x}, Angle is {self.angle}"
 
     @property
     def min_axis_x(self):
@@ -108,11 +112,11 @@ def centerline(seg_out,laneframe, ego_box):
     
     return laneframe
 
-def lane_loc_f(laneframe) -> Dict:
+def lane_loc_f(laneframe,transH) -> Dict:
     """
     Determine the location of the lanes.
     only judge by the slope.
-    #TODO judge in another way
+    #TODO judge in another way: curve lane:https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8542714
     """
     left_loc=[]
     right_loc=[]
@@ -120,13 +124,20 @@ def lane_loc_f(laneframe) -> Dict:
     for id in laneframe.laneIDs:
 
         slope = id.equa[0]
+        angle =  math.atan(-id.equa[0])/math.pi*180
 
         if slope < 0: #因為opencv座標關係
-            left_loc.append(id)#.name,id.equa])
+            left_loc.append(id)
+            hor_x = int((transH - id.equa[1]) / id.equa[0]) 
+            id.hor_x = hor_x
+            id.angle = angle
         else :
-            right_loc.append(id)#.name,id.equa])
+            right_loc.append(id)
+            hor_x = int((transH - id.equa[1]) / id.equa[0]) 
+            id.hor_x = hor_x
+            id.angle = angle
 
-    left_loc.sort(key=lambda x: x.equa[0])        
+    left_loc.sort(key=lambda x: x.equa[0])
     right_loc.sort(key=lambda x: x.equa[0])
 
     lane_loc = {"leftmost":left_loc[-1],"left_near_center":left_loc[0],"right_near_center":right_loc[-1],"rightmost":right_loc[0]}
@@ -150,13 +161,10 @@ def corresponding_coordinates(pos,M):
     y = (M[1][0]*u+M[1][1]*v+M[1][2])/(M[2][0]*u+M[2][1]*v+M[2][2])
     return (int(x), int(y))
 
-def perspective_transform(parm, egoH, Vpoint: List, lane_loc: Dict, img_out):
+def perspective_transform(parm, transH, Vpoint: List, lane_loc: Dict, img_out):
     """
     Convert to a bird's-eye view with perspective transformation
     """
-    transH = parm.IMG_W
-    if egoH: # If there is a hood below the picture
-        transH = egoH
 
     # 計算投影Y軸
     ProjY = int((transH-Vpoint[1])*0.25+Vpoint[1])
@@ -198,33 +206,105 @@ def crop_loc(ProjY,M,laneframe,parm):
         crop_x.append(dst[0])
     parm.crop = (round(min(crop_x)-200,-2) if round(min(crop_x)-200,-2) > 0 else 0, round(max(crop_x)+200,-2))
 
-def arrequa(laneframe):
+def arr_type(laneframe,type):
     """product array (each lane's equa)"""
-    arr_euqa = []
+    arr = []
+
     for i, laneid in enumerate(laneframe.laneIDs):
         # print("laneid",laneid.name,laneid.equa[0])
-        arr_euqa.append(laneid.equa[0])
-    arr_euqa = np.array(arr_euqa)
-    return arr_euqa
+        if type ==1:
+            arr.append(laneid.equa[0])
+        elif type ==2:
+            arr.append(laneid.hor_x)
+        elif type ==3:
+            arr.append((laneid.name,int(laneid.hor_x)))
+        else:
+            pass
+    # arr = np.array(arr)
+    if type == 3:
+        arr = sorted(arr, key=lambda x:x[1])
+        arr = [x[0] for x in arr]
+    else:
+        arr = np.array(arr)
+    return arr
+
+# @pysnooper.snoop()
+def re_lane(lane_allframe,frame_index,tem, slope_diff,change_lane,LaneID):
+    '''
+    Re-id the lanes for each frame
+    '''
+    nowframe, prevframe = deepcopy(lane_allframe[frame_index]), deepcopy(lane_allframe[frame_index-1])
+    prob_laneID = []
+    prob_frameids, prob_frames = zip(*tem)  #prob_frame
+    tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #Record the problem frame
+
+    prev_assigned = LaneID[1]
+    assigned = [False for _ in range(0,len(LaneID[0]))]
+    C = np.Inf*np.ones((len(prevframe), len(nowframe)), dtype=np.float64)
+    if change_lane == "NEW":
+        for id_n, laneid_now in enumerate(prevframe.laneIDs):
+            for id_p, laneid_prev in enumerate(nowframe.laneIDs):
+                C[id_n, id_p]= abs(laneid_prev.hor_x - laneid_now.hor_x)
+    else:
+        for id_n, laneid_now in enumerate(prevframe.laneIDs):
+            for id_p, laneid_prev in enumerate(nowframe.laneIDs):
+                C[id_n, id_p]= abs(laneid_prev.angle - laneid_now.angle)
+
+    # assign clusters to lane (in acsending order of error)
+    for r, c in zip(C.argmin(axis=0),range(len(nowframe))):
+        if C[r, c] >= slope_diff+6:
+            if change_lane == True or "NEW":
+                pass
+            else:
+                break
+        if assigned[c]:
+            continue
+        if prev_assigned[c]:
+            assigned[c] = True
+            # update best lane match with current pixel
+            nowframe.laneIDs[c].name = LaneID[0][r]
+
+    new_LaneID = arr_type(nowframe,3)
+    if False in assigned:
+        if sum(assigned) == len(new_LaneID):
+            LaneID = [LaneID[0],assigned]
+        else:
+            for i, x in enumerate(assigned):
+                if x == False:
+                    if LaneID[0][i] ==False:
+                        nowframe.laneIDs[i].name = LaneID[0][i]
+                        assigned[i] = True
+                    else:
+                        nowframe.laneIDs[i].name = "LaneID_"+str(len(assigned)+1)
+                        LaneID[0].append("LaneID_"+str(len(assigned)+1))
+                        assigned[i] = True
+
+    nowframe.sort
+    LaneID = [LaneID[0],assigned]
+    lane_allframe[frame_index] = nowframe
+    
+    # print("nowframe:",nowframe)
+    return lane_allframe,tem,LaneID
 
 def re_lane_f(A_laneframe,B_laneframe,prob_laneID,slope_diff):
     # A_laneframe = lane_allframe[frame_index-1]
     # B_laneframe = nowframe
     for i, laneid_prev in enumerate(A_laneframe.laneIDs):
-        if (abs(laneid_prev.equa[0] - B_laneframe.laneIDs[i].equa[0]) <= slope_diff):
+        # print("laneid_prev",laneid_prev,'\n','B_laneframe',B_laneframe.laneIDs[i])
+        if (abs(laneid_prev.angle - B_laneframe.laneIDs[i].angle) <= slope_diff):
             B_laneframe.laneIDs[i].name = laneid_prev.name
             continue
         elif (i+1) < len(B_laneframe): #如果不是最後一條道路線  
             #+1(跳過自己) 先檢查後面的線
             for j in range(i+1 ,len(B_laneframe)):
-                if(abs(laneid_prev.equa[0] - B_laneframe.laneIDs[j].equa[0]) <= slope_diff):
+                if(abs(laneid_prev.angle - B_laneframe.laneIDs[j].angle) <= slope_diff):
                     tem_lane = deepcopy(B_laneframe.laneIDs[i]) #暫時儲存要交換的道路線
                     B_laneframe.laneIDs[j].name = laneid_prev.name
                     B_laneframe.laneIDs[i] = deepcopy(B_laneframe.laneIDs[j])
                     B_laneframe.laneIDs[j] = deepcopy(tem_lane)
                     break
-            else: #如果沒找到
-                if prob_laneID: #len(prob_laneID) != 0 未測試
+            else: #如果沒找到，找問題線
+                if prob_laneID: 
                     for prob_index, prob in enumerate(prob_laneID):
                         if(abs(laneid_prev.equa[0] - prob.equa[0]) <= slope_diff):
                             B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
@@ -235,16 +315,14 @@ def re_lane_f(A_laneframe,B_laneframe,prob_laneID,slope_diff):
                             del prob_laneID[prob_index]
                             break
                 else:
-                    # 如果都沒找到 #TODO 還沒寫完
-                    input()
+                    # 如果都沒找到
                     B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
                     prob_laneID.append(B_laneframe.laneIDs[i])
-                    break
 
         else:#最後一條直接檢查問題線
-            if prob_laneID: #len(prob_laneID) != 0 未測試
+            if prob_laneID: 
                 for prob_index, prob in enumerate(prob_laneID):
-                    if(abs(laneid_prev.equa[0] - prob.equa[0]) <= slope_diff):
+                    if(abs(laneid_prev.angle - prob.angle) <= slope_diff):
                         B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
                         prob_laneID.append(B_laneframe.laneIDs[i])
 
@@ -253,40 +331,78 @@ def re_lane_f(A_laneframe,B_laneframe,prob_laneID,slope_diff):
                         del prob_laneID[prob_index]
                         break
             else:
-                # 如果都沒找到，把這條加到問題線裡#TODO  
-                input()
+                # 如果都沒找到，把這條加到問題線裡# 
+                
                 B_laneframe.laneIDs[i].name = "prob_"+ B_laneframe.laneIDs[i].name
                 prob_laneID.append(B_laneframe.laneIDs[i])
-                break
     
     return A_laneframe, B_laneframe
-
-def re_lane(lane_allframe,frame_index,tem, slope_diff):
+def re_lane_V2(lane_allframe,frame_index,tem, slope_diff,change_lane):
     '''
     Re-id the lanes for each frame
     '''
     nowframe, prevframe = deepcopy(lane_allframe[frame_index]), deepcopy(lane_allframe[frame_index-1])
     prob_laneID = []
     prob_frameids, prob_frames = zip(*tem)  #prob_frame
+
     """ 如果現在這一幀跟前一幀抓到的道路線數一樣，用前一幀比對這一幀"""
     if len(nowframe) == len(prevframe):
-        _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID, slope_diff)
+        assigned = [False for _ in range(0,len(prevframe.laneIDs))]
+        # print("assigned",assigned)
+        C = np.Inf*np.ones((len(prevframe), len(nowframe)), dtype=np.float64)
+        if change_lane == "NEW":
+            for id_n, laneid_now in enumerate(prevframe.laneIDs):
+                for id_p, laneid_prev in enumerate(nowframe.laneIDs):
+                    C[id_n, id_p]= abs(laneid_prev.hor_x - laneid_now.hor_x)
+        else:
+            for id_n, laneid_now in enumerate(prevframe.laneIDs):
+                for id_p, laneid_prev in enumerate(nowframe.laneIDs):
+                    C[id_n, id_p]= abs(laneid_prev.angle - laneid_now.angle)
+        print(C)
+        # assign clusters to lane (in acsending order of error)
+        row_ind, col_ind = np.unravel_index(np.argsort(C, axis=None), C.shape)
+        for r, c in zip(row_ind, col_ind):
+            # print("C[r, c]",C[r, c],r,c)
+            if C[r, c] >= slope_diff:
+                if change_lane == True or "NEW":
+                    pass
+                else:
+                    break
+            if assigned[c]:
+                continue
+            assigned[c] = True
+            # update best lane match with current pixel
+            if nowframe.laneIDs[c].name != prevframe.laneIDs[r].name:
+                nowframe.laneIDs[c].name = prevframe.laneIDs[r].name
+        print("assigned",assigned)
+        # input()
+        print("prevframe",prevframe,'\n','nowframe',nowframe)
 
+        # for c, cluster in enumerate(prevframe.laneIDs):
+        #     if len(cluster) == 0:
+        #         continue
+        #     # if not assigned[c]:
+
+        # _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID, slope_diff)
     elif len(nowframe) > len(prevframe):
+        print("now:",nowframe)
+        print("prev:",prevframe)
+        print("Q1")
+        input()
         """ 如果現在這一幀(4)比前一幀(3)抓到的道路線數多，則用前一幀比對這一幀 """
         tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #Record the problem frame
         if frame_index-1 in prob_frameids: #檢驗前一幀是不是也有相同問題
             prob_prevframe = deepcopy(prob_frames[prob_frameids.index(frame_index-1)])
             prob_prevframe.sort()
 
-            prob_prevframe_equa = arrequa(prob_prevframe)
-            nowframe_equa = arrequa(nowframe)
+            prob_prevframe_equa = arr_type(prob_prevframe,1)
+            nowframe_equa = arr_type(nowframe,1)
             
             if len(prob_prevframe_equa) == len(nowframe_equa):
                 cal_equa = nowframe_equa - prob_prevframe_equa
 
-                if (np.array(abs(cal_equa))<= slope_diff).all() :
-                    prevframe_equa = arrequa(prevframe)
+                if (np.array(abs(cal_equa))<= 0.5).all() :
+                    prevframe_equa = arr_type(prevframe,1)
                     diff_idx = np.where(np.in1d(prob_prevframe_equa, prevframe_equa) == False)[0]
                     
                     j = 0
@@ -295,7 +411,7 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
                         prevframe.add_lane(prob_prevframe.laneIDs[int(i)])
                         j = j+1
 
-                    _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID,slope_diff)
+                    # _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID,0.5)
                 else:
                     #TODO 換道問題 導致 斜率都變了QQ
                     diff_idx = np.where((np.array(abs(cal_equa))<= slope_diff) == False)[0]
@@ -315,24 +431,61 @@ def re_lane(lane_allframe,frame_index,tem, slope_diff):
             _ ,nowframe = re_lane_f(prevframe,nowframe,prob_laneID,slope_diff)
 
     else:
+        print("now:",nowframe)
+        print("prev:",prevframe)
+        print("Q2")
+        input()
         """ 如果現在這一幀(3)比前一幀(4)抓到的道路線數少，則用這一幀比對前一幀 """
         tem.append((frame_index ,deepcopy(lane_allframe[frame_index]))) #Record the problem frame
-        if frame_index-1 in prob_frameids: #檢驗前一幀是不是也有相同問題 #TODO 
-            assert False, 'error3! 遇到了再處理'
+        assigned = [False for _ in range(0,len(prevframe.laneIDs))]
+        print("assigned",assigned)
+        C = np.Inf*np.ones((len(prevframe), len(nowframe)), dtype=np.float64)
+        if change_lane == "NEW":
+            for id_n, laneid_now in enumerate(prevframe.laneIDs):
+                for id_p, laneid_prev in enumerate(nowframe.laneIDs):
+                    C[id_n, id_p]= abs(laneid_prev.hor_x - laneid_now.hor_x)
+        else:
+            for id_n, laneid_now in enumerate(prevframe.laneIDs):
+                for id_p, laneid_prev in enumerate(nowframe.laneIDs):
+                    C[id_n, id_p]= abs(laneid_prev.angle - laneid_now.angle)
+        
+        print(C)
+        # assign clusters to lane (in acsending order of error)
+        row_ind, col_ind = np.unravel_index(np.argsort(C, axis=None), C.shape)
+        for r, c in zip(row_ind, col_ind):
+            # print("C[r, c]",C[r, c],r,c)
+            if C[r, c] >= slope_diff:
+                if change_lane == True or "NEW":
+                    pass
+                else:
+                    break
+            if assigned[c]:
+                continue
+            assigned[c] = True
+            # update best lane match with current pixel
+            if nowframe.laneIDs[c].name != prevframe.laneIDs[r].name:
+                nowframe.laneIDs[c].name = prevframe.laneIDs[r].name
+        
+        
+        # if frame_index-1 in prob_frameids: #檢驗前一幀是不是也有相同問題 #TODO 
+        #     assert False, 'error3! 遇到了再處理'
 
-        #把多的線列為有問題線 
-        for k in range(len(lane_allframe[frame_index]) ,len(lane_allframe[frame_index-1])):
-            prevframe.laneIDs[k].name = "prob_"+ lane_allframe[frame_index-1].laneIDs[k].name
-            prob_laneID.append(prevframe.laneIDs[k])
-        del prevframe.laneIDs[len(lane_allframe[frame_index]):]
+        # #把多的線列為有問題線 
+        # for k in range(len(lane_allframe[frame_index]) ,len(lane_allframe[frame_index-1])):
+        #     prevframe.laneIDs[k].name = "prob_"+ lane_allframe[frame_index-1].laneIDs[k].name
+        #     prob_laneID.append(prevframe.laneIDs[k])
+        # del prevframe.laneIDs[len(lane_allframe[frame_index]):]
 
-        nowframe,_ = re_lane_f(nowframe,prevframe,prob_laneID,slope_diff)
+        # nowframe,_ = re_lane_f(nowframe,prevframe,prob_laneID,slope_diff)
 
     #移除無法配對到的問題線
     for idx, laneid in enumerate(nowframe.laneIDs):
-        # print("laneid",laneid.name,laneid.equa[0])
+        print("laneid",laneid.name,laneid.equa[0])
         if "prob" in laneid.name:
-            del nowframe.laneIDs[idx]
+            if change_lane ==True: #TODO
+                nowframe.laneIDs[idx].name = laneid.name.replace("prob_","")
+            else:
+                del nowframe.laneIDs[idx]
 
     lane_allframe[frame_index] = nowframe
 

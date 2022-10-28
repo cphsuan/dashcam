@@ -1,3 +1,4 @@
+from enum import unique
 import sys
 import os
 import shutil
@@ -120,9 +121,6 @@ class CULane(Dataset):
                     self.seg_list.append(os.path.join(self.data_dir_path, 'laneseg_label_w16', l[1:-3] + 'png'))
 
     def __getitem__(self, idx):
-        print(self.img_list[idx])
-        print(idx)
-        input()
         img = cv2.imread(self.img_list[idx]).astype(np.float32)/255. # (H, W, 3)
         img = cv2.resize(img[14:, :, :], (1664, 576), interpolation=cv2.INTER_LINEAR)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -139,7 +137,7 @@ class CULane(Dataset):
             # create AFs
             seg_wo_ignore = seg[:, :, 0].copy()
             seg_wo_ignore[seg_wo_ignore == self.ignore_label] = 0
-            vaf, haf = generateAFs(seg_wo_ignore.astype(np.long), viz=False)
+            vaf, haf = generateAFs(seg_wo_ignore.astype(np.long), viz=True)
             af = np.concatenate((vaf, haf[:, :, 0:1]), axis=2)
 
             # convert all outputs to torch tensors
