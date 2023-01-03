@@ -84,7 +84,7 @@ def imagenet_vid_classes():
 
 def coco_classes():
     return [
-        "ego vehicle", "rider", "bicycle", "bus", "car","caravan", "motorcycle", "trailer", "train", "truck"
+        "ego vehicle", "bicycle", "bus", "car", "motorcycle", "truck"
         ]
 
 

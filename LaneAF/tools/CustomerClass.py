@@ -25,6 +25,8 @@ class LanePerFrame:
     def sort(self):
         self.laneIDs.sort(key=attrgetter('hor_x'))
         # sorted(self.laneIDs , key=lambda x: x.hor_x)
+    def reset(self,idx):
+        return LanePerFrame(str(idx))
 
 class Parm:
     def __init__(self,IMG_H, IMG_W):

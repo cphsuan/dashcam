@@ -5,14 +5,13 @@ import os
 import os.path as osp
 import argparse
 from copy import deepcopy
-
+from tqdm import tqdm
 from PIL import Image
 from labelme import PY2
 from labelme import QT4
 
 parser = argparse.ArgumentParser('Remake Warp Json...')
 parser.add_argument('--dataset-WarpIMGdir', type=str , default='/media/hsuan/data/WarpDataset/VIL100/JPEGImages/', help='path to Warp IMG dataset')
-parser.add_argument('--output-Jsondir', type=str , default='/media/hsuan/data/WarpDataset/VIL100/Json/', help='path to output Json')
 args = parser.parse_args()
 
 
@@ -20,13 +19,13 @@ if __name__ == "__main__":
     # ParentPath
     WarpIMGdir = args.dataset_WarpIMGdir
     # allFileList = sorted(os.listdir(os.path.join(parentPath, "JPEGImages")))
-    file = "0_Road014_Trim004_frames"
-    imgPerFile = sorted(os.listdir(os.path.join(WarpIMGdir, file)))
-    print(imgPerFile)
+    file = "3_Road017_Trim008_frames"
+    imgPerFile = sorted([_ for _ in os.listdir(os.path.join(WarpIMGdir, file)) if _.endswith(".jpg")])
 
-    for frameIndex, frame in enumerate(imgPerFile):
+    for frameIndex, frame in enumerate(tqdm(imgPerFile)):
+
         if frameIndex == 0:
-            referjsonPath = os.path.join(args.output_Jsondir, file, frame.replace('jpg', 'json'))
+            referjsonPath = os.path.join(args.dataset_WarpIMGdir, file, frame.replace('jpg', 'json'))
 
             with open(referjsonPath) as f:
                 jsonData = json.load(f)
@@ -34,9 +33,9 @@ if __name__ == "__main__":
             imagePath = referJson["imagePath"].replace(frame,"")
 
         else:
-            jsonPath = os.path.join(args.output_Jsondir, file, frame.replace('jpg', 'json'))
-            referJson["imagePath"] = imagePath+frame
-            print(imagePath+frame)
+            jsonPath = os.path.join(args.dataset_WarpIMGdir, file, frame.replace('jpg', 'json'))
+
+            referJson["imagePath"] = frame
             imageData = Image.open(os.path.join(WarpIMGdir, file, frame))
 
             with io.BytesIO() as f:
@@ -56,7 +55,7 @@ if __name__ == "__main__":
             
             if isinstance(referJson, bytes):
                 referJson = str(referJson, encoding='utf-8')
-             
+            
             with open(jsonPath, 'w') as wf:
                 json.dump(referJson, wf, indent=4)
 

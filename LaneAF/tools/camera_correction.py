@@ -1,14 +1,14 @@
 import numpy as np
 import cv2
 
-def camera_correction(frame):
+def camera_correction(frame,a):
     width  = frame.shape[1]
     height = frame.shape[0]
 
     distCoeff = np.zeros((4,1),np.float64)
 
     # add your coefficients here!
-    k1 = -0.00001; # negative to remove barrel distortion
+    k1 = a; # negative to remove barrel distortion #-0.000012
     k2 = 0.0;
     p1 = 0.0;
     p2 = 0.0;

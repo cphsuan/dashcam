@@ -116,9 +116,9 @@ def decodeAFs(BW, VAF, HAF, fg_thresh=128, err_thresh=5, viz=False):
         C = np.Inf*np.ones((len(lane_end_pts), len(clusters)), dtype=np.float64)
         # print(row,lane_end_pts) #lane_end_pts=y
         # print(np.sort(lane_end_pts,axis=0))
-        current_mean_pts = []
-        for r, pts in enumerate(lane_end_pts): 
-            current_mean_pts.append(np.mean(pts,axis=0))
+        # current_mean_pts = []
+        # for r, pts in enumerate(lane_end_pts): 
+        #     current_mean_pts.append(np.mean(pts,axis=0))
 
         # for c, cluster in enumerate(clusters):
         #     if len(cluster) == 0:
