@@ -35,14 +35,23 @@ sys.path.append(r'/home/hsuan/Thesis/mmdetection/')
 from mmdet.apis import (inference_detector, init_detector)
 import pysnooper
 import time
-import operator
-import statistics
-import collections
+#for mmclassification
+sys.path.append(r'/home/hsuan/Thesis/mmclassification/')
+from mmcls.apis import init_model, inference_model, show_result_pyplot
+
+
 
 parser = argparse.ArgumentParser('Options for inference with LaneAF models in PyTorch...')
 # 2_Road026_Trim003_frames
+
+# demo video
+# 0_Road001_Trim003_frames
+# 1_Road014_Trim001_frames
 # 2_Road017_Trim001_frames
-# 0_Road031_Trim004_frames                                                                                                                                
+# 4_Road027_Trim013_frames
+# 5_Road001_Trim001_frames
+# 6_Road022_Trim001_frames
+
 parser.add_argument('--input_video', type=str , default='2_Road017_Trim001_frames.avi', help='path to input video')
 parser.add_argument('--dataset-dir', type=str , default='/media/hsuan/data/CULane', help='path to dataset')
 #'/media/hsuan/data/WarpDataset/VIL100/JPEGImages/'
@@ -52,11 +61,14 @@ parser.add_argument('--snapshot', type=str, default='/home/hsuan/Thesis/LaneAF/l
 parser.add_argument('--seed', type=int, default=1 , help='set seed to some constant value to reproduce experiments')
 parser.add_argument('--no-cuda', action='store_true', default=False, help='do not use cuda for training')
 # for mmdetection
-parser.add_argument('--detconfig',default='mmdetection/configs/faster_rcnn/faster_rcnn_r50_fpn_1x_coco.py' ,help='Config file')
+parser.add_argument('--detconfig',default='mmdetection/configs/faster_rcnn/faster_rcnn_r101_fpn_1x_coco.py' ,help='Config file')
 parser.add_argument('--detcheckpoint',default='mmdetection/work_dirs/latest.pth' ,help='Checkpoint file')
 parser.add_argument('--detout-file', default=None, help='Path to output file')
 parser.add_argument('--detpalette', default='coco', choices=['coco', 'voc', 'citys', 'random'], help='Color palette used for visualization')
 parser.add_argument('--detscore-thr', type=float, default=0.5, help='bbox score threshold')
+# for mmclassification
+parser.add_argument('--clsconfig',default='mmclassification/wrk_dir/resnet101_warp.py' ,help='Config file')
+parser.add_argument('--clscheckpoint',default='mmclassification/wrk_dir/latest.pth' ,help='Checkpoint file')
 args = parser.parse_args()
 # check args
 if args.input_video is None:
@@ -150,8 +162,7 @@ def HoodDetection(args, img):
         
         if score > args.detscore_thr:
             # print(x1, y1, x2, y2)
-            y1 = y1-45
-            egobbox = {'label': objmodel.CLASSES[0], 'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2)}
+            egobbox = {'label': objmodel.CLASSES[0], 'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2),'score':score}
             # drawBoundingBox(img, egobbox)
             # print(box)
         else:
@@ -175,8 +186,14 @@ def ObjDetection(args,objmodel, img):
     # cv2.waitKey(0)
     return img, class_res
 
-if __name__ == "__main__":
+def LaneClassification(args,clsmodel, img):
+    
+    clsresult = inference_model(clsmodel, img)
+    print("classification_result",clsresult)
+    # show_result_pyplot(clsmodel, img, clsresult)
+    return clsresult
 
+if __name__ == "__main__":
     heads = {'hm': 1, 'vaf': 2, 'haf': 1}
     if args.backbone == 'dla34':
         model = get_pose_net(num_layers=34, heads=heads,head_conv=256, down_ratio=4)
@@ -188,6 +205,7 @@ if __name__ == "__main__":
     if args.cuda:
         model.cuda()
     # print(model)
+
     """ preprocessing video  """
     cap = cv2.VideoCapture("/media/hsuan/data/VIL100/videos/"+args.input_video)
     
@@ -227,8 +245,6 @@ if __name__ == "__main__":
             #     ### detect hood ###
             #     global egoH
             #     img, egoH, ego_box, objmodel = HoodDetection(args, img)
-            #     # cv2.imshow("img_out", img)
-            #     # cv2.waitKey(0)
             #     # If there is a hood below the picture
             #     transH=egoH if egoH else parm.IMG_W
             #     ### frame processing ###
@@ -237,8 +253,6 @@ if __name__ == "__main__":
 
             #     ### Identify lane lines:LaneAF ###
             #     seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
-            #     # cv2.imshow("img_out", img_out_LaneAF)
-            #     # cv2.waitKey(0)
             #     ### build centerline and Lane Info (stored in laneframe)  ###
             #     laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
             #     ### Calculate R^2 to evaluate undistort
@@ -248,28 +262,26 @@ if __name__ == "__main__":
             #         parameter = np.polyfit(x, y, 1) #建立線
 
             #         f = [np.polyval(parameter, x_value) for x_value in x]
-            #         # r2 = r2_score(y, f)
-            #         # print(r2)
             #         r2_.append(r2_score(y, f))
 
-            #     print("avg=",sum(r2_)/len(r2_))
+            #     # print("avg=",sum(r2_)/len(r2_))
             #     i_index.append(k)
             #     r2_list.append(sum(r2_)/len(r2_))
             #     num.append(len(r2_))
             #     laneframe = laneframe.reset((frame_index))
                 
-            # df = pd.DataFrame(list(zip(i_index, r2_list,num)), columns =["i_index","r2_list","num"])
+            # # df = pd.DataFrame(list(zip(i_index, r2_list,num)), columns =["i_index","r2_list","num"])
             # # with open('/home/hsuan/results2/output.csv', 'w', encoding = 'utf-8-sig') as f:  
             # #     df.to_csv(f)
 
-            # plt.style.use("ggplot")
-            # fig, ax1 = plt.subplots()
-            # ax2 = ax1.twinx()
+            # # plt.style.use("ggplot")
+            # # fig, ax1 = plt.subplots()
+            # # ax2 = ax1.twinx()
 
-            # ax1.plot(df["i_index"], df["r2_list"],c = 'tab:blue')
-            # ax1.set_ylabel('Average of R2 Score', color='tab:blue')
-            # ax1.set_ylim([min(df["r2_list"])-0.05,1])
-            # ax1.tick_params(axis='y', labelcolor='tab:blue')
+            # # ax1.plot(df["i_index"], df["r2_list"],c = 'tab:blue')
+            # # ax1.set_ylabel('Average of R2 Score', color='tab:blue')
+            # # ax1.set_ylim([min(df["r2_list"])-0.05,1])
+            # # ax1.tick_params(axis='y', labelcolor='tab:blue')
             # ##########
             # if len(set(num)) != 1:
             #     max_r2 = r2_list[0]
@@ -282,42 +294,72 @@ if __name__ == "__main__":
             #     max_r2 = max(r2_list)
             #     coef_k = i_index[r2_list.index(max_r2)]
             # #########
-            # ax1.plot(coef_k,max_r2, 'bo')
-            # ax1.annotate("({},{})".format(coef_k,round(max_r2,0)), xy=(coef_k,max_r2), xytext=(15, 0), color='blue', textcoords='offset points')
+            # # ax1.plot(coef_k,max_r2, 'bo')
+            # # ax1.annotate("({},{})".format(coef_k,round(max_r2,0)), xy=(coef_k,max_r2), xytext=(15, 0), color='blue', textcoords='offset points')
 
-            # ax2.plot(df["i_index"], df["num"],c = "g")
-            # ax2.set_ylabel('Num of Lanes', color='g')
-            # ax2.set_ylim([min(df['num'])-1 if min(df['num'])-1 >= 0  else 0,max(df['num'])+1])
-            # ax2.tick_params(axis='y', labelcolor='g')
+            # # ax2.plot(df["i_index"], df["num"],c = "g")
+            # # ax2.set_ylabel('Num of Lanes', color='g')
+            # # ax2.set_ylim([min(df['num'])-1 if min(df['num'])-1 >= 0  else 0,max(df['num'])+1])
+            # # ax2.tick_params(axis='y', labelcolor='g')
 
-            # plt.title("Calibration Coefficient k Estimation", fontsize = 15, fontweight = "bold", y = 1) 
-            # ax1.set_xlabel("Calibration coefficient k", fontweight = "bold")   
-            # ax1.set_xlim(max(df["i_index"]),min(df["i_index"]))
+            # # plt.title("Calibration Coefficient k Estimation", fontsize = 15, fontweight = "bold", y = 1) 
+            # # ax1.set_xlabel("Calibration coefficient k", fontweight = "bold")   
+            # # ax1.set_xlim(max(df["i_index"]),min(df["i_index"]))
 
-            # fig.tight_layout()
-            # plt.show()
+            # # fig.tight_layout()
+            # # plt.show()
 
             ### carema correction (barrel distortion) ###
-            coef_k = -0.000018 #-0.000011
+            coef_k = -0.00002 #-0.000011
             frame, cam, distCoeff = camera_correction(frame,round(coef_k,6))
             ### frame processing ###
             img = cv2.resize(frame[int(parm.IMG_org_crop_w):,:, :], (int(parm.IMG_H), int(parm.IMG_W)), interpolation=cv2.INTER_LINEAR)  # 圖片長寬要可以被 32 整除
             ### detect hood ###
             img, egoH, ego_box, objmodel = HoodDetection(args, img)
-            ### detect objects ###
-            # img, class_res = ObjDetection(args,objmodel, img)
-            # cv2.imwrite("/home/hsuan/results_img/hood_result.jpg", img)
+            # cv2.imwrite("/home/hsuan/results_img/hoodres/hood_result3.jpg", img)
+            # cv2.imshow("img_out", img)
+            # cv2.waitKey(0)
             ### If there is a hood below the picture###
             transH=egoH if egoH else parm.IMG_W
             ### frame processing ###
             img = cv2.cvtColor(img.astype(np.float32)/255, cv2.COLOR_BGR2RGB)
             ### Identify lane lines:LaneAF ###
             seg_out_LaneAF, img_out_LaneAF = LaneAF(img, model)
+
             # cv2.imwrite("/home/hsuan/results_img/lane_result{}.jpg".format(frame_index), img_out_LaneAF)
             ### build centerline and Lane Info (stored in laneframe)  ###
             laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
+
             ###calculate angle###
             laneframe = angle_f(laneframe,transH)
+
+            #########################讀vil100 dataset json (for dataset)
+            # vil_jsonlist = [_ for _ in os.listdir(os.path.join('/media/hsuan/data/VIL100/Json/{}'.format((args.input_video).replace('.avi','')))) if _.endswith(".json")]
+            # vil_jsonlist = sorted(vil_jsonlist)
+            # with open(os.path.join('/media/hsuan/data/VIL100/Json/{}/{}'.format((args.input_video).replace('.avi',''),vil_jsonlist[frame_index]))) as f:
+            #     vildata = json.load(f)
+            # vil_info = vildata['annotations']["lane"]
+            # for i, laneid in enumerate(laneframe.laneIDs):
+            #     for vil_i, vil_id in enumerate(vil_info):
+            #         #build the lines
+            #         x, y = zip(*vil_id['points'])
+            #         y = [i_y-(np.shape(frame)[0]- np.shape(img)[0]) for i_y in y]
+            #         vil_equa = np.polyfit(x, y, 1)
+
+            #         if vil_equa[0] ==1: #垂直線
+            #             angle = 90
+            #         elif vil_equa[1] <0:
+            #             angle = abs((math.atan2( vil_equa[1]-0, 0-vil_equa[1]/vil_equa[0] )/math.pi*180))
+            #         else:
+            #             angle =180-(math.atan2( vil_equa[1]-0, 0-vil_equa[1]/vil_equa[0] )/math.pi*180)
+                    
+            #         if vil_i == 0 :
+            #             min_angle = abs(laneid.angle-angle)
+            #         if abs(laneid.angle-angle) <= min_angle:
+            #             min = abs(laneid.angle-angle)
+            #             laneid.lanetype = vil_id['attribute']
+            #             laneid.occlusion = vil_id['occlusion']
+            
             ### re-Lane ###
             for i, laneid in enumerate(laneframe.laneIDs):
                 LaneID_Info.append(LaneID_info(laneid.name,5, laneid.angle))
@@ -328,10 +370,10 @@ if __name__ == "__main__":
             #     # print(laneid.equa,laneid.angle)
             #     cols, rows = zip(*laneid.allpoints)
             #     for r, c in zip(rows, cols):
-            #         cv2.circle(img_out_LaneAF, (r, c) , 10, lanecolor[laneid.name], 1)
+            #         cv2.circle(img_out_LaneAF, (r, c) , 3, lanecolor[laneid.name], 1)
             #     cv2.imshow("img_out", img_out_LaneAF)
             #     cv2.waitKey(0)
-
+            # cv2.imwrite("/home/hsuan/results_img/lane_result{}.jpg".format(frame_index), img_out_LaneAF)
             ### Determine the location of the lanes and Calculate the vanishing point ###
             try:
                 lane_loc = lane_loc_f(laneframe)
@@ -342,6 +384,7 @@ if __name__ == "__main__":
             
             laneframe.Vpoint = Vpoint
             lane_allframe.append(laneframe)
+
             ### Perspective transform ###
             img_out, warped, pm= perspective_transform(parm, transH, Vpoint, lane_loc, img_out_LaneAF)
             # cv2.imshow("warped", warped)
@@ -350,18 +393,44 @@ if __name__ == "__main__":
             crop_loc(pm[0],pm[1],laneframe,parm) 
             ### crop pic ###
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
+
             ### crop lane ###
             lane_pic = crop_lane(lane_allframe[frame_index],warped,parm,pm)
-            for i in lane_pic:
-                # cv2.imwrite(os.path.join('/home/hsuan/results_img/croplane/{}'.format(str(frame_index)+'_'+str(i))+'.jpg'),i)
-                cv2.imshow("lane_pic", i)
+
+            #########################讀vil100 dataset json (for dataset)
+            # for idx, laneid in enumerate(lane_allframe[frame_index].laneIDs):
+            #     img = laneid.img
+            #     lanetype = laneid.lanetype
+            #     if img != "undefined":
+            #         cv2.imwrite(os.path.join('/media/hsuan/data/LaneDataset/{}/{}'.format(str(lanetype),str((args.input_video).replace('.avi',''))+str(frame_index)+'_'+str(idx))+'.jpg'),img)
+
+            ### image Enhancement ###
+            clsmodel = init_model(args.clsconfig, args.clscheckpoint, device='cuda:0')
+            for idx,laneid in enumerate(lane_allframe[frame_index].laneIDs):
+                img = laneid.img
+                #Laplace
+                kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], np.float32) #锐化
+                img_Laplace = cv2.filter2D(img, -1, kernel=kernel)       
+                # CLAHE
+                imgYUV = cv2.cvtColor(img_Laplace, cv2.COLOR_BGR2YCrCb)
+                channelsYUV = cv2.split(imgYUV)
+                t = channelsYUV[0]
+                clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(2, 2))
+                p= clahe.apply(t)
+                channels = cv2.merge([p,channelsYUV[1],channelsYUV[2]])
+                img_CLAHE = cv2.cvtColor(channels, cv2.COLOR_YCrCb2BGR)
+
+                clsresult = LaneClassification(args,clsmodel, img_CLAHE)
+                print(clsresult)
+                laneid.lanetype = clsresult
+                # cv2.imshow("Orginal", img)
+                cv2.imshow("CLAHE_result", img_CLAHE)
                 cv2.waitKey(0)
             ### store pic to do dataset
             # cv2.imwrite(os.path.join(storepic_path,'{0:05d}'.format(frame_index)+'.jpg'),cropimage)
-            ###crop lane ###
 
-            cv2.imwrite(os.path.join('/home/hsuan/results_img','{0:05d}'.format(frame_index)+'.jpg'),cropimage)
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接
+            #int(parm.IMG_H+parm.crop[1]-parm.crop[0])
             videoWrite = cv2.VideoWriter('/home/hsuan/results2/'+args.input_video, fourcc, parm.fps, (int(parm.IMG_H+parm.crop[1]-parm.crop[0]), int(parm.IMG_W)))
             videoWrite.write(img)
 
@@ -384,20 +453,47 @@ if __name__ == "__main__":
             laneframe = centerline(seg_out_LaneAF,laneframe,ego_box)
             ###calculate angle###
             laneframe = angle_f(laneframe,transH)
-            ### vis ###            
+
+            #########################讀vil100 dataset json (for dataset)
+            # vil_jsonlist = [_ for _ in os.listdir(os.path.join('/media/hsuan/data/VIL100/Json/{}'.format((args.input_video).replace('.avi','')))) if _.endswith(".json")]
+            # vil_jsonlist = sorted(vil_jsonlist)
+            # with open(os.path.join('/media/hsuan/data/VIL100/Json/{}/{}'.format((args.input_video).replace('.avi',''),vil_jsonlist[frame_index]))) as f:
+            #     vildata = json.load(f)
+            # vil_info = vildata['annotations']["lane"]
             # for i, laneid in enumerate(laneframe.laneIDs):
-            #     # print(laneid.equa,laneid.angle)
-            #     cols, rows = zip(*laneid.allpoints)
-            #     # print(len(set(cols)), len(set(rows)))
-            #     for r, c in zip(rows, cols):
-            #         cv2.circle(img_out_LaneAF, (r, c) , 3, lanecolor[laneid.name], 1)
-            # cv2.imwrite("/home/hsuan/results_img/laneaf0_result{}.jpg".format(frame_index), img_out_LaneAF)
-            # cv2.imwrite("/home/hsuan/results_img/lane_"+str(frame_index)+".jpg", img_out_LaneAF)
-            # cv2.imshow("img_out", img_out_LaneAF)
-            # cv2.waitKey(0)
+            #     for vil_i, vil_id in enumerate(vil_info):
+            #         #build the lines
+            #         x, y = zip(*vil_id['points'])
+            #         y = [i_y-(np.shape(frame)[0]- np.shape(img)[0]) for i_y in y]
+            #         vil_equa = np.polyfit(x, y, 1)
+
+            #         if vil_equa[0] ==1: #垂直線
+            #             angle = 90
+            #         elif vil_equa[1] <0:
+            #             angle = abs((math.atan2( vil_equa[1]-0, 0-vil_equa[1]/vil_equa[0] )/math.pi*180))
+            #         else:
+            #             angle =180-(math.atan2( vil_equa[1]-0, 0-vil_equa[1]/vil_equa[0] )/math.pi*180)
+                    
+            #         if vil_i == 0 :
+            #             min_angle = abs(laneid.angle-angle)
+            #         if abs(laneid.angle-angle) <= min_angle:
+            #             min = abs(laneid.angle-angle)
+            #             laneid.lanetype = vil_id['attribute']
+            #             laneid.occlusion = vil_id['occlusion']
+
             ### re-Lane ###
             laneframe.sort()
             laneframe,LaneID_Info, maxID= re_lane_angle(laneframe,LaneID_Info,maxID)
+            ### vis
+            # for i, laneid in enumerate(laneframe.laneIDs):
+            #     print(laneid.equa,laneid.angle)
+            #     print(len(laneid.allpoints))
+            #     cols, rows = zip(*laneid.allpoints)
+            #     for r, c in zip(rows, cols):
+            #         cv2.circle(img_out_LaneAF, (r, c) , 3, lanecolor[laneid.name], 1)
+            #     cv2.imshow("img_out", img_out_LaneAF)
+            #     cv2.waitKey(0)
+            #     cv2.imwrite("/home/hsuan/results_img/lane_result{}.jpg".format(frame_index), img_out_LaneAF)
             ###  Determine the location of the lanes and Calculate the vanishing point###
             try:
                 lane_loc = lane_loc_f(laneframe)
@@ -407,42 +503,45 @@ if __name__ == "__main__":
                 break
             laneframe.Vpoint = Vpoint
             lane_allframe.append(laneframe)
-            ### vis ###   
-            # for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
-                # print(laneid.name,laneid.equa,laneid.angle)
-                # cols, rows = zip(*laneid.allpoints)
-                # print(len(set(cols)), len(set(rows)))
-                # if frame_index >86:
-                #     input()
-                # for r, c in zip(rows, cols):
-                #     cv2.circle(img_out_LaneAF, (r, c) , 3, lanecolor[laneid.name], 1)
-                # plt.scatter(cols,rows,s=1)
-                # plt.plot(cols,rows, linestyle = '--', color = 'r')
-            # cv2.imwrite("/home/hsuan/results_img/lane_result{}.jpg".format(frame_index), img_out_LaneAF)
-            # cv2.imshow("img_out", img_out_LaneAF)
-            # cv2.waitKey(0)
-            # ax.invert_yaxis()
-            # plt.grid(True)
-            # plt.title('Partial Lane \n(opencv coordinate system representation)')
-            # plt.ylabel("Y-axis")
-            # plt.xlabel("X-axis")
-            # plt.show()
+
             ### Perspective transform ###
             img_out, warped, pm= perspective_transform(parm, transH, Vpoint, lane_loc, img_out_LaneAF)
             ### crop pic ###
             cropimage = warped[0:int(parm.IMG_W) , parm.crop[0] : parm.crop[1]]
-            ### store pic to do dataset
-            # cv2.imwrite(os.path.join(storepic_path,'{0:05d}'.format(frame_index)+'.jpg'),cropimage)
             ### crop lane ###
             lane_pic = crop_lane(lane_allframe[frame_index],warped,parm,pm)
-            for i in lane_pic:
-                # cv2.imwrite(os.path.join('/home/hsuan/results_img/croplane/{}'.format(str(frame_index)+'_'+str(i))+'.jpg'),i)
-                cv2.imshow("lane_pic", i)
+            
+            #########################讀vil100 dataset json (for dataset)
+            # for idx, laneid in enumerate(lane_allframe[frame_index].laneIDs):
+            #     img = laneid.img
+            #     lanetype = laneid.lanetype
+            #     if img != "undefined":
+            #         cv2.imwrite(os.path.join('/media/hsuan/data/LaneDataset/{}/{}'.format(str(lanetype),str((args.input_video).replace('.avi',''))+str(frame_index)+'_'+str(idx))+'.jpg'),img)
+
+            ### image Enhancement ###
+            for idx,laneid in enumerate(lane_allframe[frame_index].laneIDs):
+                img = laneid.img
+                #Laplace
+                kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], np.float32) #锐化
+                img_Laplace = cv2.filter2D(img, -1, kernel=kernel)       
+                # CLAHE
+                imgYUV = cv2.cvtColor(img_Laplace, cv2.COLOR_BGR2YCrCb)
+                channelsYUV = cv2.split(imgYUV)
+                t = channelsYUV[0]
+                clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(2, 2))
+                p= clahe.apply(t)
+                channels = cv2.merge([p,channelsYUV[1],channelsYUV[2]])
+                img_CLAHE = cv2.cvtColor(channels, cv2.COLOR_YCrCb2BGR)
+                clsresult = LaneClassification(args,clsmodel, img_CLAHE)
+                laneid.lanetype = clsresult
+                cv2.imshow("CLAHE_result", img_CLAHE)
                 cv2.waitKey(0)
 
             img = cv2.hconcat([img_out, cropimage])  # 水平拼接
+            # print(np.shape(img))
+            # input()
             img = cv2.rectangle(img, (40, 15), (550, 50), (0, 0, 0), -1)
-            img = cv2.putText(img, ("frame: " + str(frame_index))+"  changelane: "+str(change_lane), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 1,cv2.LINE_AA)
+            img = cv2.putText(img, ("frame: " + str(frame_index+1))+"  changelane: "+str(change_lane), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 1,cv2.LINE_AA)
             # for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
             #     img = cv2.putText(img, ("laneID:" + str(laneid.name) +" Slope:"+ str(round(laneid.equa[0],3))), (int(laneid.hor_x), 500+20*i), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 1,cv2.LINE_AA)
             # # print(np.shape(img))

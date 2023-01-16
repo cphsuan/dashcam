@@ -10,7 +10,7 @@ np.random.seed(41)
 
 #0為背景
 # classname_to_id = ["single white solid", "single white dotted"]
-classname_to_id = ["ego vehicle", "bicycle", "bus", "car", "motorcycle", "truck"]
+classname_to_id = ["ego vehicle"]
 
 class_dic = dict()
 for index,value in enumerate(classname_to_id):
@@ -100,7 +100,7 @@ class Lableme2CoCo:
         return [min_x, min_y, max_x - min_x, max_y - min_y]
 
 parser = argparse.ArgumentParser('Labelme to Coco...')
-parser.add_argument('--labelme-path', type=str , default='/media/hsuan/data/bddclass/val', help='path to Warp IMG dataset')
+parser.add_argument('--labelme-path', type=str , default='/media/hsuan/data/bddclass/train', help='path to Warp IMG dataset')
 # "/media/hsuan/data/WarpDataset/VIL100/JPEGImages/0_Road014_Trim004_frames"
 parser.add_argument('--output-cocodir', type=str , default='/home/hsuan/Thesis/mmdetection/data/', help='path to output Img')
 args = parser.parse_args()
@@ -123,19 +123,19 @@ if __name__ == '__main__':
     # 切分資料集比例
     # train_path, val_path = train_test_split(json_list_path, test_size=0.12)
     # print("train_n:", len(train_path), 'val_n:', len(val_path))
-    val_path = json_list_path
+    train_path = json_list_path
     # 把訓練集轉成coco json
-    # print("process train dataset...")
-    # l2c_train = Lableme2CoCo()
-    # train_instance = l2c_train.to_coco(train_path)
-    # l2c_train.save_coco_json(train_instance, '%scoco/annotations/instances_train2017.json'%saved_coco_path)
-    # for file in tqdm(train_path, desc='train pics:'):
-    #     shutil.copy(file.replace("json","jpg"),"%scoco/train2017/"%saved_coco_path)
+    print("process train dataset...")
+    l2c_train = Lableme2CoCo()
+    train_instance = l2c_train.to_coco(train_path)
+    l2c_train.save_coco_json(train_instance, '%scoco/annotations/instances_train2017.json'%saved_coco_path)
+    for file in tqdm(train_path, desc='train pics:'):
+        shutil.copy(file.replace("json","jpg"),"%scoco/train2017/"%saved_coco_path)
 
-    # 把驗證集轉成coco json
-    print("process val dataset...")
-    l2c_val = Lableme2CoCo()
-    val_instance = l2c_val.to_coco(val_path)
-    l2c_val.save_coco_json(val_instance, '%scoco/annotations/instances_val2017.json'%saved_coco_path)
-    for file in tqdm(val_path, desc='val pics:'):
-        shutil.copy(file.replace("json","jpg"),"%scoco/val2017/"%saved_coco_path)
+    # # 把驗證集轉成coco json
+    # print("process val dataset...")
+    # l2c_val = Lableme2CoCo()
+    # val_instance = l2c_val.to_coco(val_path)
+    # l2c_val.save_coco_json(val_instance, '%scoco/annotations/instances_val2017.json'%saved_coco_path)
+    # for file in tqdm(val_path, desc='val pics:'):
+    #     shutil.copy(file.replace("json","jpg"),"%scoco/val2017/"%saved_coco_path)

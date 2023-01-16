@@ -10,6 +10,7 @@ from scipy.optimize import linear_sum_assignment
 import matplotlib.pyplot as plt
 import pysnooper
 import statistics
+import time
 #@pysnooper.snoop()
 class Lane:
     '''
@@ -23,9 +24,11 @@ class Lane:
         self.name = lane_name
         self.equa = equa #中心線
         self.allpoints = allpoints #所有點(放大)
-        self.lanetype = "undefined"
         self.hor_x = "undefined"
         self.angle = "undefined"
+        self.img = "undefined"
+        self.lanetype = "undefined"
+        self.occlusion = "undefined"
     
     def __str__(self):
         return f"Name is {self.name}, Equa is {self.equa}, Hor_x is {self.hor_x}, Angle is {self.angle}"
@@ -67,7 +70,7 @@ def centerline(seg_out,laneframe, ego_box):
                     if ego_box != None and col*8 >= ego_box['x1'] and col*8 <= ego_box['x2'] and row*8 >= ego_box['y1'] and row*8 <= ego_box['y2'] :
                         continue
                     AllPoints.append([row*8, col*8])
-        if len(AllPoints) < 20: # the lane is too small
+        if len(AllPoints) < 30: # the lane is too small
             print("the lane is too small")
             continue
 
@@ -110,6 +113,8 @@ def centerline(seg_out,laneframe, ego_box):
 
                 laneframe.laneIDs[checkslope.index(min_x)].equa = comb_equa
                 laneframe.laneIDs[checkslope.index(min_x)].allpoints = comb_AllPoints
+
+                print("combine")
                 continue
 
         checkslope.append(equa[0])
@@ -245,7 +250,7 @@ def crop_loc(ProjY,M,laneframe,parm):
 
     parm.crop = (int(min(crop_x) -400) if int(min(crop_x) -400) > 0 else 0, int(max(crop_x)+300))
 
-def crop_lane(laneframe,warped,parm,pm):
+def crop_lane(laneframe,warped,parm,pm,error = 0):
     '''裁剪車道線'''
     lane_pic = []
     for i, laneid in enumerate(laneframe.laneIDs):
@@ -257,19 +262,40 @@ def crop_lane(laneframe,warped,parm,pm):
             if pt[1]>=0 and pt[1]<=int(parm.IMG_W) and pt[0]>= parm.crop[0] and pt[0] <=parm.crop[1]:
                 lanepoints.append(pt)
                 # cv2.circle(warped, pt, 10, (255, 0, 0), -1)
-        trans_rows, trans_cols = zip(*lanepoints)
-        medianpts = int((max(set(trans_rows))+min(set(trans_rows)))/2)
-        w = 50
-        # cv2.line(warped, (medianpts-w, 0), (medianpts-w, parm.IMG_W),color=(0, 0, 255), thickness=3)
-        # cv2.line(warped, (medianpts+w, 0), (medianpts+w, parm.IMG_W),color=(0, 0, 255), thickness=3)
-        # cv2.line(warped, (medianpts, 0), (medianpts, parm.IMG_W),color=(0, 255, 0), thickness=3)
-        # cv2.line(warped, (0, 950), (int(parm.IMG_H), 950),color=(0, 255, 0), thickness=3)
-        croplane = warped[0:950 , medianpts-w : medianpts+w]
-        lane_pic.append(croplane)
+        if lanepoints :
+            trans_rows, trans_cols = zip(*lanepoints)
+            medianpts = int((max(set(trans_rows))+min(set(trans_rows)))/2)
+            w = 50
+            # cv2.line(warped, (medianpts-w, 0), (medianpts-w, parm.IMG_W),color=(0, 0, 255), thickness=3)
+            # cv2.line(warped, (medianpts+w, 0), (medianpts+w, parm.IMG_W),color=(0, 0, 255), thickness=3)
+            # cv2.line(warped, (medianpts, 0), (medianpts, parm.IMG_W),color=(0, 255, 0), thickness=3)
+            # cv2.line(warped, (0, 950), (int(parm.IMG_H), 950),color=(0, 255, 0), thickness=3)
+            croplane = warped[0:950 , medianpts-w+error : medianpts+w+error]
+            laneid.img = croplane
+            lane_pic.append(croplane)
     return lane_pic
 
+def augmentation(o,res_pic,thed):
+    lane_res = []
+    if o ==1: #thed =-150
+        alpha =1
+        for img in res_pic:
+            new_img = np.zeros(img.shape,img.dtype)
+            for y in range(img.shape[0]):
+                for x in range(img.shape[1]):
+                    for c in range(img.shape[2]):
+                        new_img[y,x,c] = np.clip(alpha*img[y,x,c]+thed,0,255)
+            lane_res.append(new_img)
+        return lane_res
+
+    if o ==2: #thed=7
+        for img in res_pic:
+            dst = cv2.GaussianBlur(img, (thed, thed), 0)
+            lane_res.append(dst)
+        return lane_res
+
 def arr_type(laneframe,type):
-    """product array """ #TODO
+    """product array """ 
     arr = []
     if type == 4: #arr_type(LaneID_Info,4)
         for i, laneid in enumerate(laneframe):
@@ -291,10 +317,7 @@ def arr_type(laneframe,type):
             else:
                 pass
     arr = np.array(arr)
-    # if type == 3:
-    #     arr = sorted(arr, key=lambda x:x[0])
-    # else:
-    #     arr = np.array(arr)
+
     return arr
 
 def re_lane_angle(laneframe,LaneID_Info,maxID):
@@ -341,21 +364,9 @@ def re_lane_angle(laneframe,LaneID_Info,maxID):
 
     check_allID_freq = arr_type(LaneID_Info,5)
     for idx in range(len(check_allID_freq)-1,-1,-1):
-        # print("i=",idx)
         if check_allID_freq[idx] == 0:
                 del LaneID_Info[idx]
-                # print(LaneID_Info)
-                # input()
 
-    # if frame_index >=23:
-    #     print(assigned_allID)
-    #     for i, laneID in enumerate(LaneID_Info): 
-    #         print("info",laneID.name,laneID.freq,laneID.angle)
-    #     for i, laneid in enumerate(lane_allframe[frame_index].laneIDs):
-    #         print(laneid.equa,laneid.angle)
-    #     print(C)
-    #     print(row_ind, col_ind)
-        # input()
     return nowframe,LaneID_Info,maxID
 
 

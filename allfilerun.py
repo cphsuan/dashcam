@@ -12,7 +12,7 @@ if __name__ == "__main__":
     sys.argv = ["infer_vil100.py", "--input_video='2_Road017_Trim001_frames.avi'"]
     for idx, i in enumerate(allfile):
         print("idx",idx,"video=",i)
-        if idx >= 0:
+        if idx > 91:
             sys.argv[1] = '--input_video='+i
             exec(a_script)
             # input()

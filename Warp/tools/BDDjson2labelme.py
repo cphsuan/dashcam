@@ -16,20 +16,20 @@ from labelme import QT4
 
 #train pan_seg_train
 #val pan_seg_val
-dataset = 'val'
+dataset = 'train'
 BDDSegJsonPath = '/media/hsuan/data/BDD/bdd100k_pan_seg_labels_trainval/bdd100k/labels/pan_seg/polygons/pan_seg_{}.json'.format(dataset)
 with open(BDDSegJsonPath) as f:
     BDDJson = json.load(f)
 print(len(BDDJson)) #7000
 
-classes = ["ego vehicle", "bicycle", "bus", "car", "motorcycle", "truck"]
+classes = ["ego vehicle"]
 
 labelmejson = {"version": "5.0.1", "flags": {}, "shapes": None, "imagePath": None, "imageData": None, "imageHeight":None, "imageWidth":None} 
 labeljson0 = {"label": None, "points": None, "group_id": None, "shape_type": "rectangle","flags": {}}
 
 print("start")
 egoVeh = []
-class0,class1,class2,class3,class4,class5,class6= 0,0,0,0,0,0,0
+class0 = 0
 for i in tqdm(range(len(BDDJson))):
     imgpath = os.path.join('/media/hsuan/data/BDD/bdd100k_images_10k/bdd100k/images/10k/{}/'.format(dataset), BDDJson[i]["name"])
     desdir = '/media/hsuan/data/bddclass/{}/'.format(dataset)
@@ -43,18 +43,6 @@ for i in tqdm(range(len(BDDJson))):
             
             if labels[j]["category"] == classes[0]:
                 class0+=1
-            elif labels[j]["category"] == classes[1]:
-                class1+=1
-            elif labels[j]["category"] == classes[2]:
-                class2+=1
-            elif labels[j]["category"] == classes[3]:
-                class3+=1
-            elif labels[j]["category"] == classes[4]:
-                class4+=1
-            elif labels[j]["category"] == classes[5]:
-                class5+=1
-            else:
-                class6+=1
 
             labeljson= deepcopy(labeljson0)
             labeljson["label"] = labels[j]["category"]
@@ -98,7 +86,7 @@ for i in tqdm(range(len(BDDJson))):
         with open(os.path.join(desdir,BDDJson[i]["name"].replace('jpg', 'json')), "w") as f:
             json.dump(labelmejson, f, indent = 4)
 
-print(class0,class1,class2,class3,class4,class5,class6)
+print(class0)
     # cv2.imshow("img_out", img)
     # cv2.waitKey(0)
 
